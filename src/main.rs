@@ -27,10 +27,39 @@
 extern crate serde;
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate rocket;
+#[macro_use]
+extern crate getset;
+#[macro_use]
+extern crate typed_builder;
 
+use crate::database::ConnectionPointer;
 use rocket::http::Method;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
+mod database;
 mod logger;
+mod openid;
+mod routes;
+
+#[derive(Getters)]
+#[get = "pub"]
+pub struct Locator {
+    connection: ConnectionPointer,
+}
+
+impl Locator {
+    pub async fn new() -> Self {
+        // establish the connection
+        let connection = database::establish_connection().await;
+
+        Self { connection }
+    }
+}
+
+pub type LocatorPointer = Arc<Mutex<Locator>>;
 
 #[tokio::main]
 async fn main() {
@@ -70,10 +99,15 @@ async fn main() {
         cors_options.to_cors().unwrap()
     };
 
+    // init the locator
+    let locator = Locator::new().await;
+
     // build the rocket
     rocket::build()
         // attach cors
         .attach(cors)
+        // manage the locator
+        .manage(Arc::new(Mutex::new(locator)))
         // launch it
         .launch()
         .await
