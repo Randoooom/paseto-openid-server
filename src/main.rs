@@ -1,3 +1,81 @@
-fn main() {
-    println!("Hello, world!");
+/*
+ * The MIT License (MIT)
+ *
+ * Copyright (c) 2022 Randoooom
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in the
+ * Software without restriction, including without limitation the rights to use, copy,
+ * modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
+ * and to permit persons to whom the Software is furnished to do so, subject to the
+ * following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+ * HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+ * IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ *  SOFTWARE.
+ */
+
+#[macro_use]
+extern crate serde;
+#[macro_use]
+extern crate log;
+
+use rocket::http::Method;
+
+mod logger;
+
+#[tokio::main]
+async fn main() {
+    // set the logging format
+    log::set_logger(&logger::LOGGER)
+        .map(|()| log::set_max_level(log::LevelFilter::max()))
+        .unwrap();
+    // init dotenv
+    dotenv::dotenv().expect("Use the .env file");
+
+    // load the cors fairing
+    let cors = {
+        // load the allowed origins from env
+        let origins = std::env::var("ALLOWED_ORIGINS").unwrap();
+        // split
+        let origins = origins.split_whitespace().collect::<Vec<&str>>();
+        // setup the cors origins
+        let allowed_origins = rocket_cors::AllowedOrigins::some_exact(origins.as_slice());
+        // cors options
+        let cors_options = rocket_cors::CorsOptions {
+            allowed_origins,
+            allowed_methods: vec![
+                Method::Get,
+                Method::Post,
+                Method::Put,
+                Method::Delete,
+                Method::Options,
+                Method::Head,
+            ]
+            .into_iter()
+            .map(From::from)
+            .collect(),
+            allow_credentials: true,
+            ..Default::default()
+        };
+
+        cors_options.to_cors().unwrap()
+    };
+
+    // build the rocket
+    rocket::build()
+        // attach cors
+        .attach(cors)
+        // launch it
+        .launch()
+        .await
+        .unwrap();
 }
