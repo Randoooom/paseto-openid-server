@@ -22,7 +22,22 @@
  * IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  *  SOFTWARE.
  */
-CREATE TYPE gender AS ENUM ('male', 'female', 'other');
+
+DO
+$$
+    BEGIN
+        IF NOT EXISTS(SELECT *
+                      FROM pg_type typ
+                               INNER JOIN pg_namespace nsp
+                                          ON nsp.oid = typ.typnamespace
+                      WHERE nsp.nspname = current_schema()
+                        AND typ.typname = 'gender') THEN
+            CREATE TYPE gender AS ENUM ('male', 'female', 'other');
+        END IF;
+    END;
+$$
+LANGUAGE plpgsql;
+
 CREATE TABLE IF NOT EXISTS clients
 (
     sub                   uuid PRIMARY KEY      DEFAULT gen_random_uuid(),

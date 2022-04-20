@@ -24,6 +24,7 @@
  */
 
 use chrono::{Duration, Utc};
+use openssl::pkey::PKey;
 use rbatis::Uuid;
 use rusty_paseto::prelude::*;
 
@@ -78,18 +79,29 @@ pub struct TokenSigner {
 impl TokenSigner {
     /// Init a new instance of the TokenSigner
     pub fn new() -> Result<Self, String> {
-        // Creatable via `openssl genpkey -algorithm ed25519 -out private_key.pem`
-        // and `openssl pkey -in private_key.pem -pubout -out public_key.pem`
+        // This whole section could be much cleaner, but the 32byte key has to be transformed
+        // into the 64byte ec signature key manually
 
-        // load the key bytes
-        let public_key = include_bytes!("../../public_key.pem");
-        let private_key = include_bytes!("../../private_key.pem");
+        // load the keys
+        let private_key_raw = PKey::private_key_from_pem(include_bytes!("../../private_key.pem"))
+            .unwrap()
+            // convert to raw
+            .raw_private_key()
+            .unwrap();
+        let public_key_raw = PKey::public_key_from_pem(include_bytes!("../../public_key.pem"))
+            .unwrap()
+            // convert to raw
+            .raw_public_key()
+            .unwrap();
 
-        // build the keys
-        let public_key = Key::<32>::try_from(hex::encode(public_key).as_str())
-            .map_err(|error| format!("Error while converting public key: {}", error))?;
-        let private_key = Key::<64>::try_from(hex::encode(private_key).as_str())
-            .map_err(|error| format!("Error while converting private key: {}", error))?;
+        // build the signature key
+        let mut bytes: [u8; 64] = [0u8; 64];
+        bytes[..32].copy_from_slice(private_key_raw.as_slice());
+        bytes[32..].copy_from_slice(public_key_raw.as_slice());
+
+        // setup the keys
+        let public_key = Key::<32>::from(public_key_raw.as_slice());
+        let private_key = Key::<64>::from(bytes);
 
         // construct
         Ok(Self {
@@ -108,10 +120,10 @@ impl TokenSigner {
 
         // sign the token
         PasetoBuilder::<V4, Public>::default()
-            .set_claim(CustomClaim::try_from(("sub", sub.to_string())).unwrap())
+            .set_claim(CustomClaim::try_from(("uuid", sub.to_string())).unwrap())
             .set_claim(ExpirationClaim::try_from(expiry.to_rfc3339()).unwrap())
             .build(&private_key)
-            .unwrap_or(String::from(""))
+            .unwrap()
     }
 }
 

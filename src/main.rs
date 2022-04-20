@@ -112,6 +112,7 @@ async fn main() {
 
     // build the rocket
     rocket::build()
+        .mount("/", routes![routes::authorize::post_login])
         // attach cors
         .attach(cors)
         // manage the locator
