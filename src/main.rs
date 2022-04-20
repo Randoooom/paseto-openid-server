@@ -26,6 +26,8 @@
 #[macro_use]
 extern crate serde;
 #[macro_use]
+extern crate serde_json;
+#[macro_use]
 extern crate log;
 #[macro_use]
 extern crate rocket;
@@ -33,6 +35,11 @@ extern crate rocket;
 extern crate getset;
 #[macro_use]
 extern crate typed_builder;
+extern crate argon2;
+#[macro_use]
+extern crate rbatis;
+#[macro_use]
+extern crate lazy_static;
 
 use crate::database::ConnectionPointer;
 use rocket::http::Method;
@@ -42,6 +49,7 @@ use tokio::sync::Mutex;
 mod database;
 mod logger;
 mod openid;
+mod responder;
 mod routes;
 
 #[derive(Getters)]

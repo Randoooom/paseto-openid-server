@@ -23,8 +23,13 @@
  *  SOFTWARE.
  */
 
+use crate::ConnectionPointer;
+use argon2::{self};
+use google_authenticator::GoogleAuthenticator;
+use rbatis::crud::CRUD;
 use rbatis::{TimestampZ, Uuid};
 
+#[derive(Clone, Deserialize, Serialize, Debug)]
 pub enum Gender {
     Male,
     Female,
@@ -77,6 +82,41 @@ pub struct Client {
     updated_at: TimestampZ,
 }
 
+impl Client {
+    /// Get the client by the nickname
+    pub async fn from_nickname(
+        nickname: &str,
+        connection: &ConnectionPointer,
+    ) -> rbatis::Result<Option<Self>> {
+        // lock the connection
+        let locked = connection.lock().await;
+
+        // collect
+        locked.fetch_by_column("nickname", nickname).await
+    }
+
+    /// Get the associated address object of the user
+    pub async fn address(&self, connection: &ConnectionPointer) -> rbatis::Result<Option<Address>> {
+        // lock the connection
+        let locked = connection.lock().await;
+
+        // collect
+        locked.fetch_by_column("client", self.sub.to_string()).await
+    }
+
+    // Get the associated authentication data object of the user
+    pub async fn authentication_data(
+        &self,
+        connection: &ConnectionPointer,
+    ) -> rbatis::Result<Option<ClientAuthenticationData>> {
+        // lock the connection
+        let locked = connection.lock().await;
+
+        // collect
+        locked.fetch_by_column("client", self.sub.to_string()).await
+    }
+}
+
 #[derive(TypedBuilder, Clone, Debug, Getters)]
 #[crud_table(id_name: "uuid" | id_type: "Uuid" | table_name: "addresses")]
 #[get = "pub"]
@@ -98,4 +138,59 @@ pub struct Address {
     country: String,
     /// the associated client
     client: Uuid,
+}
+
+#[derive(TypedBuilder, Clone, Debug, Getters)]
+#[crud_table(id_name: "uuid" | id_type: "Uuid" | table_name: "client_authentication_data")]
+#[get = "pub"]
+#[builder(field_defaults(setter(into)))]
+pub struct ClientAuthenticationData {
+    /// the unique identifier for the data
+    uuid: Uuid,
+    /// The argon2d hashed password
+    password: String,
+    /// The TOTP secret (base32 encoded)
+    secret: Option<String>,
+    /// The last registered login / grant
+    last_login: TimestampZ,
+    /// the associated client
+    client: Uuid,
+}
+
+impl ClientAuthenticationData {
+    /// Validate the given token with the totp secret of the client
+    pub fn validate_totp(&self, token: &str) -> bool {
+        // init the instance
+        let totp = GoogleAuthenticator::new();
+
+        // verify
+        totp.verify_code(self.secret.as_ref().unwrap().as_str(), token, 30, 0)
+    }
+
+    /// Authenticate the login for the client based on the given password (and totp, if enabled)
+    pub fn login(&self, password: &str, token: Option<&str>) -> bool {
+        // verify the password with the hash
+        let matches =
+            argon2::verify_encoded(self.password.as_str(), password.as_bytes()).unwrap_or(false);
+
+        if matches {
+            // check for totp activated (secret exists or not)
+            if self.secret.is_some() {
+                // check the input
+                if token.is_none() {
+                    return false;
+                }
+
+                // unwrap the option
+                let token = token.unwrap();
+                // validate the totp
+                if !self.validate_totp(token) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+        false
+    }
 }

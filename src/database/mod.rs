@@ -42,6 +42,10 @@ pub async fn establish_connection() -> ConnectionPointer {
         .await
         .expect("Establish postgres connection");
 
+    // init the database
+    let sql = include_str!("up.sql");
+    rbatis.exec(sql, vec![]).await.unwrap();
+
     // wrap with arc mutex
     Arc::new(Mutex::new(rbatis))
 }

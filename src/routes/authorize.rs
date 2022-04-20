@@ -23,5 +23,67 @@
  *  SOFTWARE.
  */
 
-#[post("/login")]
-pub async fn post_login() {}
+use crate::database::client::Client;
+use crate::openid::authorization::TOKENSIGNER;
+use crate::responder::ApiResponse;
+use crate::LocatorPointer;
+use rocket::http::Status;
+use rocket::serde::json::Json;
+use rocket::State;
+
+#[derive(Deserialize, Serialize)]
+pub struct AuthenticationRequest {
+    /// the username / nickname of the client
+    nickname: String,
+    /// the password
+    password: String,
+    /// the totp
+    token: Option<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct AuthenticationResponse {
+    /// the verification token
+    token: String,
+}
+
+impl From<String> for AuthenticationResponse {
+    fn from(token: String) -> AuthenticationResponse {
+        Self { token }
+    }
+}
+
+#[post("/login", data = "<data>")]
+pub async fn post_login(
+    data: Json<AuthenticationRequest>,
+    locator: &State<LocatorPointer>,
+) -> ApiResponse<AuthenticationResponse> {
+    // lock the locator
+    let locked = locator.lock().await;
+
+    // get the client
+    let client = Client::from_nickname(data.nickname.as_str(), &locked.connection)
+        .await
+        .unwrap();
+    if let Some(client) = client {
+        // get the auth data
+        let authentication_data = client
+            .authentication_data(&locked.connection)
+            .await
+            .unwrap();
+
+        if let Some(authentication_data) = authentication_data {
+            // authenticate
+            if authentication_data.login(data.password.as_str(), data.token.as_deref()) {
+                // sign the token
+                let token = TOKENSIGNER.sign(client.sub());
+
+                // return the signed token
+                return ApiResponse::data(Status::Ok, AuthenticationResponse::from(token));
+            }
+        }
+    }
+
+    // return 401
+    ApiResponse::error(Status::Unauthorized, json!({"error": "Unauthorized"}))
+}

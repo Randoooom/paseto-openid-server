@@ -11,3 +11,7 @@ Cargo.lock
 
 .idea/
 .env
+
+# the keypair
+public_key.pem
+private_key.pem
