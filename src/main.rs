@@ -42,6 +42,7 @@ extern crate rbatis;
 extern crate lazy_static;
 
 use crate::database::ConnectionPointer;
+use crate::paseto::TokenSigner;
 use rocket::http::Method;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -49,6 +50,7 @@ use tokio::sync::Mutex;
 mod database;
 mod logger;
 mod openid;
+mod paseto;
 mod responder;
 mod routes;
 
@@ -56,14 +58,18 @@ mod routes;
 #[get = "pub"]
 pub struct Locator {
     connection: ConnectionPointer,
+    // the paseto instanc
+    paseto: TokenSigner,
 }
 
 impl Locator {
     pub async fn new() -> Self {
         // establish the connection
         let connection = database::establish_connection().await;
+        // create new instance of the signer
+        let paseto = TokenSigner::new();
 
-        Self { connection }
+        Self { connection, paseto }
     }
 }
 
@@ -112,7 +118,7 @@ async fn main() {
 
     // build the rocket
     rocket::build()
-        .mount("/", routes![routes::authorize::post_login])
+        .mount("/", routes![routes::authentication::post_login])
         // attach cors
         .attach(cors)
         // manage the locator

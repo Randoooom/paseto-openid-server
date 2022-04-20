@@ -23,4 +23,4 @@
  *  SOFTWARE.
  */
 
-pub mod authorize;
+pub mod authentication;

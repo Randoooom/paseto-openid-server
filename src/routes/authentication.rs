@@ -27,7 +27,7 @@ use crate::database::client::Client;
 use crate::openid::authorization::TOKENSIGNER;
 use crate::responder::ApiResponse;
 use crate::LocatorPointer;
-use rocket::http::Status;
+use rocket::http::{Cookie, CookieJar, SameSite, Status};
 use rocket::serde::json::Json;
 use rocket::State;
 
@@ -57,6 +57,7 @@ impl From<String> for AuthenticationResponse {
 pub async fn post_login(
     data: Json<AuthenticationRequest>,
     locator: &State<LocatorPointer>,
+    cookies: &CookieJar<'_>,
 ) -> ApiResponse<AuthenticationResponse> {
     // lock the locator
     let locked = locator.lock().await;
@@ -77,6 +78,15 @@ pub async fn post_login(
             if authentication_data.login(data.password.as_str(), data.token.as_deref()) {
                 // sign the token
                 let token = TOKENSIGNER.sign(client.sub());
+
+                // build the cookie
+                let cookie = Cookie::build("X-ACCESS-TOKEN", &token)
+                    .secure(true)
+                    .same_site(SameSite::Strict)
+                    .http_only(true)
+                    .finish();
+                // set the cookie
+                cookies.add(cookie);
 
                 // return the signed token
                 return ApiResponse::data(Status::Ok, AuthenticationResponse::from(token));

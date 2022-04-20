@@ -23,11 +23,6 @@
  *  SOFTWARE.
  */
 
-use chrono::{Duration, Utc};
-use openssl::pkey::PKey;
-use rbatis::Uuid;
-use rusty_paseto::prelude::*;
-
 // /// Space-delimited, case-sensitive list of ASCII string values that specifies whether the
 // /// Authorization Server prompts the End-User for reauthentication and consent.
 // pub enum Prompt {
@@ -70,63 +65,3 @@ use rusty_paseto::prelude::*;
 //     /// a "feature phone" type display.
 //     Wap,
 // }
-
-pub struct TokenSigner {
-    private_key: Key<64>,
-    public_key: Key<32>,
-}
-
-impl TokenSigner {
-    /// Init a new instance of the TokenSigner
-    pub fn new() -> Result<Self, String> {
-        // This whole section could be much cleaner, but the 32byte key has to be transformed
-        // into the 64byte ec signature key manually
-
-        // load the keys
-        let private_key_raw = PKey::private_key_from_pem(include_bytes!("../../private_key.pem"))
-            .unwrap()
-            // convert to raw
-            .raw_private_key()
-            .unwrap();
-        let public_key_raw = PKey::public_key_from_pem(include_bytes!("../../public_key.pem"))
-            .unwrap()
-            // convert to raw
-            .raw_public_key()
-            .unwrap();
-
-        // build the signature key
-        let mut bytes: [u8; 64] = [0u8; 64];
-        bytes[..32].copy_from_slice(private_key_raw.as_slice());
-        bytes[32..].copy_from_slice(public_key_raw.as_slice());
-
-        // setup the keys
-        let public_key = Key::<32>::from(public_key_raw.as_slice());
-        let private_key = Key::<64>::from(bytes);
-
-        // construct
-        Ok(Self {
-            public_key,
-            private_key,
-        })
-    }
-
-    /// Sign a new PASETO-Token with the given sub
-    pub fn sign(&self, sub: &Uuid) -> String {
-        // build private key
-        let private_key =
-            PasetoAsymmetricPrivateKey::<V4, Public>::from(self.private_key.as_slice());
-        // build expiry
-        let expiry = Utc::now() + Duration::minutes(5);
-
-        // sign the token
-        PasetoBuilder::<V4, Public>::default()
-            .set_claim(CustomClaim::try_from(("uuid", sub.to_string())).unwrap())
-            .set_claim(ExpirationClaim::try_from(expiry.to_rfc3339()).unwrap())
-            .build(&private_key)
-            .unwrap()
-    }
-}
-
-lazy_static! {
-    pub static ref TOKENSIGNER: TokenSigner = TokenSigner::new().unwrap();
-}
