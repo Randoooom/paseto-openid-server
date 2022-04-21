@@ -43,6 +43,7 @@ pub enum Gender {
 #[builder(field_defaults(setter(into)))]
 pub struct Client {
     /// the unique value for identification
+    #[builder(default_code = r#"Uuid::new()"#)]
     sub: Uuid,
     /// The full name in displayable form
     name: String,
@@ -65,6 +66,7 @@ pub struct Client {
     /// The email of the user
     email: String,
     /// is the email verified?
+    #[default = false]
     email_verified: bool,
     /// the gender
     gender: Gender,
@@ -77,8 +79,10 @@ pub struct Client {
     /// The phone number of the user
     phone_number: Option<String>,
     /// Not implemented yet
+    #[default = false]
     phone_number_verified: bool,
     /// last updated timestamp
+    #[builder(default_code = r#"TimestampZ::new()"#)]
     updated_at: TimestampZ,
 }
 
@@ -123,6 +127,7 @@ impl Client {
 #[builder(field_defaults(setter(into)))]
 pub struct Address {
     /// the identifier of the address
+    #[builder(default_code = r#"Uuid::new()"#)]
     uuid: Uuid,
     /// Displayable formatted address
     formatted: String,
@@ -140,18 +145,36 @@ pub struct Address {
     client: Uuid,
 }
 
+fn hash_password(password: String) -> String {
+    // build the argon config
+    let config = argon2::Config {
+        variant: argon2::Variant::Argon2d,
+        ..Default::default()
+    };
+    // gen the salt
+    let mut salt = [0u8; 16];
+    // fill
+    openssl::rand::rand_bytes(&mut salt);
+
+    // hash the password
+    argon2::hash_encoded(password.as_bytes(), salt.as_slice(), &config).unwrap()
+}
+
 #[derive(TypedBuilder, Clone, Debug, Getters)]
 #[crud_table(id_name: "uuid" | id_type: "Uuid" | table_name: "client_authentication_data")]
 #[get = "pub"]
 #[builder(field_defaults(setter(into)))]
 pub struct ClientAuthenticationData {
     /// the unique identifier for the data
+    #[builder(default_code = r#"Uuid::new()"#)]
     uuid: Uuid,
     /// The argon2d hashed password
+    #[builder(setter(!strip_option, transform = |password: String| hash_password(password)))]
     password: String,
     /// The TOTP secret (base32 encoded)
     secret: Option<String>,
     /// The last registered login / grant
+    #[builder(default_code = r#"TimestampZ::new()"#)]
     last_login: TimestampZ,
     /// the associated client
     client: Uuid,

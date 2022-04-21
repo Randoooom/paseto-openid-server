@@ -23,5 +23,29 @@
  *  SOFTWARE.
  */
 
-pub mod authorization;
-pub mod verification;
+pub struct Verification;
+
+impl Verification {
+    /// Verify the strength of the given password.
+    /// Only returns true if the estimated strength is greater than or equal strong
+    pub fn password_strong_enough(password: &str) -> bool {
+        // analysis with zxcvbn
+        let result = zxcvbn::zxcvbn(password, &[]);
+
+        // handle errors
+        match result {
+            // only allow at least strong password
+            Ok(result) => result.score() >= 3,
+            Err(_) => false,
+        }
+    }
+
+    /// Checks the email format based on the regex from https://www.emailregex.com/
+    pub fn email_valid(email: &str) -> bool {
+        // init regex
+        let regex =
+            regex::Regex::new(r"(^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$)").unwrap();
+
+        regex.is_match(email)
+    }
+}
