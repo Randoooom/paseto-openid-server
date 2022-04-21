@@ -23,10 +23,12 @@
  *  SOFTWARE.
  */
 
-use crate::database::client::{Client, ClientAuthenticationData, Gender};
+use crate::database::client::{Client, ClientAuthenticationData, ClientVerificationToken, Gender};
+use crate::mail::MailOptions;
 use crate::openid::verification::Verification;
 use crate::responder::ApiResponse;
-use crate::LocatorPointer;
+use crate::{LocatorPointer, ROOT};
+use rbatis::crud::CRUD;
 use rocket::http::{Cookie, CookieJar, SameSite, Status};
 use rocket::serde::json::Json;
 use rocket::State;
@@ -77,10 +79,10 @@ pub async fn post_login(
             // authenticate
             if authentication_data.login(data.password.as_str(), data.token.as_deref()) {
                 // sign the token
-                let token = locked.paseto.sign(client.sub());
+                let token = locked.paseto.sign_public(client.sub());
 
                 // build the cookie
-                let cookie = Cookie::build("X-ACCESS-TOKEN", &token)
+                let cookie = Cookie::build("X-ACCESS-TOKEN", token.clone())
                     .secure(true)
                     .same_site(SameSite::Strict)
                     .http_only(true)
@@ -156,27 +158,27 @@ pub async fn post_signup(
 
     // build the client
     let client = Client::builder()
-        .nickname(data.nickname)
-        .birthdate(data.birthdate)
-        .email(data.email)
-        .family_name(data.family_name)
-        .gender(data.gender)
-        .given_name(data.given_name)
-        .locale(data.locale)
-        .middle_name(data.middle_name)
-        .name(data.name)
-        .phone_number(data.phone_number)
-        .picture(data.picture)
-        .preferred_username(data.preffered_username)
-        .profile(data.profile)
-        .website(data.website)
-        .zoneinfo(data.zoneinfo)
+        .nickname(&data.nickname)
+        .birthdate(&data.birthdate)
+        .email(&data.email)
+        .family_name(&data.family_name)
+        .gender(data.gender.clone())
+        .given_name(&data.given_name)
+        .locale(&data.locale)
+        .middle_name(data.middle_name.clone())
+        .name(&data.name)
+        .phone_number(data.phone_number.clone())
+        .picture(&data.picture)
+        .preferred_username(&data.preferred_username)
+        .profile(&data.profile)
+        .website(data.website.clone())
+        .zoneinfo(&data.zoneinfo)
         .build();
 
     // build the authentication data
     let auth_data = ClientAuthenticationData::builder()
         .client(client.sub().clone())
-        .password(data.password)
+        .password(data.password.clone())
         .build();
 
     // lock the connection
@@ -185,6 +187,31 @@ pub async fn post_signup(
     connection.save(&client, &[]).await.unwrap();
     connection.save(&auth_data, &[]).await.unwrap();
 
-    // TODO: send confirmation and verification email
+    // send the email verification
+    let _ = {
+        // setup the verification token
+        let token = ClientVerificationToken::builder()
+            .client(client.sub().clone())
+            .build();
+        // save it
+        connection.save(&token, &[]).await.unwrap();
+
+        // setup the mail
+        let mail = MailOptions::builder()
+            .subject("E-Mail Verification".to_string())
+            .to(client.email().clone())
+            .content(
+                format!(
+                    "Hey {name}!</br>Please click <a href={root}/verify_email?token={token}>here</a> to verify your E-Mail!",
+                    name = client.preferred_username(),
+                    root = ROOT.as_str(),
+                    token = token.uuid()
+                )
+            )
+            .build();
+        // send it
+        locked.mail.send(mail).await.unwrap();
+    };
+
     ApiResponse::data(Status::Created, client)
 }

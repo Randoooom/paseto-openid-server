@@ -42,6 +42,7 @@ extern crate rbatis;
 extern crate lazy_static;
 
 use crate::database::ConnectionPointer;
+use crate::mail::MailSender;
 use crate::paseto::TokenSigner;
 use rocket::http::Method;
 use std::sync::Arc;
@@ -49,6 +50,7 @@ use tokio::sync::Mutex;
 
 mod database;
 mod logger;
+mod mail;
 mod openid;
 mod paseto;
 mod responder;
@@ -58,8 +60,9 @@ mod routes;
 #[get = "pub"]
 pub struct Locator {
     connection: ConnectionPointer,
-    // the paseto instanc
+    // the paseto instance
     paseto: TokenSigner,
+    mail: MailSender,
 }
 
 impl Locator {
@@ -68,12 +71,21 @@ impl Locator {
         let connection = database::establish_connection().await;
         // create new instance of the signer
         let paseto = TokenSigner::new();
+        let mail = MailSender::new();
 
-        Self { connection, paseto }
+        Self {
+            connection,
+            paseto,
+            mail,
+        }
     }
 }
 
 pub type LocatorPointer = Arc<Mutex<Locator>>;
+
+lazy_static! {
+    pub static ref ROOT: String = std::env::var("ROOT").unwrap();
+}
 
 #[tokio::main]
 async fn main() {
@@ -86,12 +98,8 @@ async fn main() {
 
     // load the cors fairing
     let cors = {
-        // load the allowed origins from env
-        let origins = std::env::var("ALLOWED_ORIGINS").unwrap();
-        // split
-        let origins = origins.split_whitespace().collect::<Vec<&str>>();
-        // setup the cors origins
-        let allowed_origins = rocket_cors::AllowedOrigins::some_exact(origins.as_slice());
+        let allowed_origins =
+            rocket_cors::AllowedOrigins::some_exact(vec![ROOT.clone()].as_slice());
         // cors options
         let cors_options = rocket_cors::CorsOptions {
             allowed_origins,
@@ -118,7 +126,13 @@ async fn main() {
 
     // build the rocket
     rocket::build()
-        .mount("/", routes![routes::authentication::post_login])
+        .mount(
+            "/",
+            routes![
+                routes::authentication::post_login,
+                routes::authentication::post_signup,
+            ],
+        )
         // attach cors
         .attach(cors)
         // manage the locator

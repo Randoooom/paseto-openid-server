@@ -43,12 +43,12 @@ impl TokenSigner {
         // into the 64byte ec signature key manually
 
         // load the keys
-        let private_key_raw = PKey::private_key_from_pem(include_bytes!("../../private_key.pem"))
+        let private_key_raw = PKey::private_key_from_pem(include_bytes!("../private_key.pem"))
             .unwrap()
             // convert to raw
             .raw_private_key()
             .unwrap();
-        let public_key_raw = PKey::public_key_from_pem(include_bytes!("../../public_key.pem"))
+        let public_key_raw = PKey::public_key_from_pem(include_bytes!("../public_key.pem"))
             .unwrap()
             // convert to raw
             .raw_public_key()
@@ -81,24 +81,30 @@ impl TokenSigner {
             PasetoAsymmetricPrivateKey::<V4, Public>::from(self.private_key.as_slice());
         // build expiry
         let expiry = Utc::now() + Duration::minutes(5);
+        // convert sub
+        let sub = sub.to_string();
 
         // sign the token
-        PasetoBuilder::<V4, Public>::default()
-            .set_claim(SubjectClaim::from(sub.to_string().as_str()))
+        let result = PasetoBuilder::<V4, Public>::default()
+            .set_claim(SubjectClaim::from(sub.as_str()))
             .set_claim(ExpirationClaim::try_from(expiry.to_rfc3339()).unwrap())
             .build(&private_key)
-            .unwrap()
+            .unwrap();
+        result
     }
 
     /// Sign new PASETO local token for authentication inside the openid provider
     pub fn sign_local(&self, sub: &Uuid) -> String {
         // build key
         let key = PasetoSymmetricKey::<V4, Local>::from(self.secret.clone());
+        // convert sub
+        let sub = sub.to_string();
 
         // sign the token
-        PasetoBuilder::<V4, Local>::default()
-            .set_claim(SubjectClaim::from(sub.to_string().as_str()))
+        let result = PasetoBuilder::<V4, Local>::default()
+            .set_claim(SubjectClaim::from(sub.as_str()))
             .build(&key)
-            .unwrap()
+            .unwrap();
+        result
     }
 }

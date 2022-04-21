@@ -23,21 +23,6 @@
  *  SOFTWARE.
  */
 
-DO
-$$
-    BEGIN
-        IF NOT EXISTS(SELECT *
-                      FROM pg_type typ
-                               INNER JOIN pg_namespace nsp
-                                          ON nsp.oid = typ.typnamespace
-                      WHERE nsp.nspname = current_schema()
-                        AND typ.typname = 'gender') THEN
-            CREATE TYPE gender AS ENUM ('male', 'female', 'other');
-        END IF;
-    END;
-$$
-LANGUAGE plpgsql;
-
 CREATE TABLE IF NOT EXISTS clients
 (
     sub                   uuid PRIMARY KEY      DEFAULT gen_random_uuid(),
@@ -52,7 +37,7 @@ CREATE TABLE IF NOT EXISTS clients
     website               varchar(255) NULL,
     email                 varchar(255) NOT NULL UNIQUE,
     email_verified        bool                  DEFAULT FALSE,
-    gender                gender       NOT NULL,
+    gender                varchar(255) NOT NULL,
     birthdate             varchar(255) NOT NULL,
     zoneinfo              varchar(255) NOT NULL,
     locale                varchar(255) NOT NULL,
@@ -80,4 +65,10 @@ CREATE TABLE IF NOT EXISTS client_authentication_data
     secret     varchar(255) NULL,
     last_login timestamptz  NOT NULL DEFAULT CURRENT_TIMESTAMP,
     client     uuid         NOT NULL REFERENCES clients (sub)
+);
+
+CREATE TABLE IF NOT EXISTS client_verification_tokens
+(
+    uuid   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    client uuid NOT NULL REFERENCES clients (sub)
 );

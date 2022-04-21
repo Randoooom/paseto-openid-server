@@ -66,7 +66,7 @@ pub struct Client {
     /// The email of the user
     email: String,
     /// is the email verified?
-    #[default = false]
+    #[builder(default = false)]
     email_verified: bool,
     /// the gender
     gender: Gender,
@@ -79,10 +79,10 @@ pub struct Client {
     /// The phone number of the user
     phone_number: Option<String>,
     /// Not implemented yet
-    #[default = false]
+    #[builder(default = false)]
     phone_number_verified: bool,
     /// last updated timestamp
-    #[builder(default_code = r#"TimestampZ::new()"#)]
+    #[builder(default_code = r#"TimestampZ::now()"#)]
     updated_at: TimestampZ,
 }
 
@@ -105,7 +105,7 @@ impl Client {
         let locked = connection.lock().await;
 
         // collect
-        locked.fetch_by_column("client", self.sub.to_string()).await
+        locked.fetch_by_column("client", self.sub.clone()).await
     }
 
     // Get the associated authentication data object of the user
@@ -117,7 +117,7 @@ impl Client {
         let locked = connection.lock().await;
 
         // collect
-        locked.fetch_by_column("client", self.sub.to_string()).await
+        locked.fetch_by_column("client", self.sub.clone()).await
     }
 }
 
@@ -154,7 +154,7 @@ fn hash_password(password: String) -> String {
     // gen the salt
     let mut salt = [0u8; 16];
     // fill
-    openssl::rand::rand_bytes(&mut salt);
+    openssl::rand::rand_bytes(&mut salt).unwrap();
 
     // hash the password
     argon2::hash_encoded(password.as_bytes(), salt.as_slice(), &config).unwrap()
@@ -172,9 +172,10 @@ pub struct ClientAuthenticationData {
     #[builder(setter(!strip_option, transform = |password: String| hash_password(password)))]
     password: String,
     /// The TOTP secret (base32 encoded)
+    #[builder(default = None)]
     secret: Option<String>,
     /// The last registered login / grant
-    #[builder(default_code = r#"TimestampZ::new()"#)]
+    #[builder(default_code = r#"TimestampZ::now()"#)]
     last_login: TimestampZ,
     /// the associated client
     client: Uuid,
@@ -216,4 +217,16 @@ impl ClientAuthenticationData {
         }
         false
     }
+}
+
+#[derive(TypedBuilder, Clone, Debug, Getters)]
+#[crud_table(id_name: "uuid" | id_type: "Uuid" | table_name: "client_verification_tokens")]
+#[get = "pub"]
+#[builder(field_defaults(setter(into)))]
+pub struct ClientVerificationToken {
+    /// The token as such and the identification
+    #[builder(default_code = r#"Uuid::new()"#)]
+    uuid: Uuid,
+    /// the associated client
+    client: Uuid,
 }
