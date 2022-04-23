@@ -39,7 +39,9 @@ extern crate rbatis;
 #[macro_use]
 extern crate lazy_static;
 
+use crate::middleware::require_session;
 use axum::http::{header, Method};
+use axum::middleware::from_fn;
 use axum::{routing::post, Extension, Router};
 use std::net::SocketAddr;
 use tower_http::cors::{CorsLayer, Origin};
@@ -76,6 +78,10 @@ async fn main() {
     let app = Router::new()
         .route("/auth/login", post(routes::authentication::post_login))
         .route("/auth/signup", post(routes::authentication::post_signup))
+        .route(
+            "/auth/logout",
+            post(routes::authentication::post_logout).layer(from_fn(require_session)),
+        )
         .layer(Extension(locator))
         // enable CORS
         .layer(

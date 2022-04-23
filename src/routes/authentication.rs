@@ -26,6 +26,7 @@
 use crate::database::client::{Client, ClientAuthenticationData, ClientVerificationToken, Gender};
 use crate::locator::mail::MailOptions;
 use crate::locator::LocatorPointer;
+use crate::middleware::SessionId;
 use crate::openid::verification::Verification;
 use crate::ROOT;
 use axum::http::StatusCode;
@@ -71,7 +72,7 @@ pub async fn post_login(
                 let token = locked.auth_mut().start_session(client.sub().clone());
 
                 // build the cookie
-                let cookie = Cookie::build("SessionID", token.clone())
+                let cookie = Cookie::build("session_id", token.clone())
                     .secure(true)
                     .same_site(SameSite::Strict)
                     .http_only(true)
@@ -209,4 +210,23 @@ pub async fn post_signup(
     };
 
     (StatusCode::CREATED, Json(json!(client)))
+}
+
+pub async fn post_logout(
+    Extension(locator): Extension<LocatorPointer>,
+    Extension(session_id): Extension<SessionId>,
+    cookies: CookieJar,
+) -> impl IntoResponse {
+    // lock the locator
+    let mut locked = locator.lock().await;
+
+    // end the session
+    locked.auth_mut().end_session(session_id.0.as_str());
+
+    // get the cookie
+    let cookie = cookies.get(session_id.0.as_str()).unwrap().clone();
+    // remove the cookie
+    let cookies = cookies.remove(cookie);
+
+    (StatusCode::OK, cookies)
 }

@@ -27,6 +27,8 @@ use chrono::{DateTime, Duration, Utc};
 use rbatis::Uuid;
 use std::collections::HashMap;
 
+#[derive(Getters, Clone)]
+#[get = "pub"]
 pub struct Session {
     sub: Uuid,
     started: DateTime<Utc>,
@@ -76,6 +78,27 @@ impl AuthHandler {
         self.sessions.insert(session_id.clone(), session);
         // return the sessionID
         session_id
+    }
+
+    /// Checks if the session is valid and returns it
+    pub fn session_valid(&mut self, session_id: &str) -> Option<Session> {
+        // get the sessions
+        match self.sessions.get(session_id).cloned() {
+            Some(session) => {
+                // check if the session is still active
+                if session.is_active() {
+                    // return the session
+                    return Some(session);
+                }
+                self.sessions.remove(session_id);
+                None
+            }
+            None => None,
+        }
+    }
+
+    pub fn end_session(&mut self, session_id: &str) {
+        self.sessions.remove(session_id);
     }
 
     /// Generate a new random sessionID
