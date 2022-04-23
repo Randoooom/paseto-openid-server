@@ -24,14 +24,18 @@
  */
 
 use crate::database::client::{Client, ClientAuthenticationData, ClientVerificationToken, Gender};
-use crate::mail::MailOptions;
+use crate::locator::mail::MailOptions;
+use crate::locator::LocatorPointer;
 use crate::openid::verification::Verification;
-use crate::responder::ApiResponse;
-use crate::{LocatorPointer, ROOT};
+use crate::ROOT;
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
+use axum::{Extension, Json};
+use axum_extra::extract::cookie::{Cookie, SameSite};
+use axum_extra::extract::CookieJar;
 use rbatis::crud::CRUD;
-use rocket::http::{Cookie, CookieJar, SameSite, Status};
-use rocket::serde::json::Json;
-use rocket::State;
+use serde::Serialize;
+use serde_json::Value;
 
 #[derive(Deserialize, Serialize)]
 pub struct AuthenticationRequest {
@@ -43,35 +47,22 @@ pub struct AuthenticationRequest {
     token: Option<String>,
 }
 
-#[derive(Deserialize, Serialize)]
-pub struct AuthenticationResponse {
-    /// the verification token
-    token: String,
-}
-
-impl From<String> for AuthenticationResponse {
-    fn from(token: String) -> AuthenticationResponse {
-        Self { token }
-    }
-}
-
-#[post("/auth/login", data = "<data>")]
 pub async fn post_login(
-    data: Json<AuthenticationRequest>,
-    locator: &State<LocatorPointer>,
-    cookies: &CookieJar<'_>,
-) -> ApiResponse<AuthenticationResponse> {
+    Json(data): Json<AuthenticationRequest>,
+    Extension(locator): Extension<LocatorPointer>,
+    cookies: CookieJar,
+) -> impl IntoResponse {
     // lock the locator
     let locked = locator.lock().await;
 
     // get the client
-    let client = Client::from_nickname(data.nickname.as_str(), &locked.connection)
+    let client = Client::from_nickname(data.nickname.as_str(), locked.connection())
         .await
         .unwrap();
     if let Some(client) = client {
         // get the auth data
         let authentication_data = client
-            .authentication_data(&locked.connection)
+            .authentication_data(locked.connection())
             .await
             .unwrap();
 
@@ -79,25 +70,29 @@ pub async fn post_login(
             // authenticate
             if authentication_data.login(data.password.as_str(), data.token.as_deref()) {
                 // sign the token
-                let token = locked.paseto.sign_public(client.sub());
+                let token = locked.paseto().sign(client.sub());
 
                 // build the cookie
-                let cookie = Cookie::build("X-ACCESS-TOKEN", token.clone())
+                let cookie = Cookie::build("SessionID", token.clone())
                     .secure(true)
                     .same_site(SameSite::Strict)
                     .http_only(true)
                     .finish();
                 // set the cookie
-                cookies.add(cookie);
+                let cookies = cookies.add(cookie);
 
                 // return the signed token
-                return ApiResponse::data(Status::Ok, AuthenticationResponse::from(token));
+                return (StatusCode::OK, cookies, Json(json!({ "token": token })));
             }
         }
     }
 
     // return 401
-    ApiResponse::error(Status::Unauthorized, json!({"error": "Unauthorized"}))
+    (
+        StatusCode::UNAUTHORIZED,
+        cookies,
+        Json(json!({"error": "Unauthorized"})),
+    )
 }
 
 #[derive(Deserialize, Serialize)]
@@ -136,24 +131,26 @@ pub struct SignupRequest {
     password: String,
 }
 
-#[post("/auth/signup", data = "<data>")]
 pub async fn post_signup(
-    data: Json<SignupRequest>,
-    locator: &State<LocatorPointer>,
-) -> ApiResponse<Client> {
+    Json(data): Json<SignupRequest>,
+    Extension(locator): Extension<LocatorPointer>,
+) -> impl IntoResponse {
     // lock the locator
     let locked = locator.lock().await;
 
     // verify the strength of the password
     if !Verification::password_strong_enough(data.password.as_str()) {
-        return ApiResponse::error(
-            Status::BadRequest,
-            json!({"error": "Password not strong enough"}),
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Password not strong enough"})),
         );
     }
     // validate the email (check via regex)
     if !Verification::email_valid(data.email.as_str()) {
-        return ApiResponse::error(Status::BadRequest, json!({"error": "Email not valid"}));
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Email not valid"})),
+        );
     }
 
     // build the client
@@ -182,7 +179,7 @@ pub async fn post_signup(
         .build();
 
     // lock the connection
-    let connection = locked.connection.lock().await;
+    let connection = locked.connection().lock().await;
     // save the data
     connection.save(&client, &[]).await.unwrap();
     connection.save(&auth_data, &[]).await.unwrap();
@@ -210,8 +207,8 @@ pub async fn post_signup(
             )
             .build();
         // send it
-        locked.mail.send(mail).await.unwrap();
+        locked.mail().send(mail).await.unwrap();
     };
 
-    ApiResponse::data(Status::Created, client)
+    (StatusCode::CREATED, Json(json!(client)))
 }

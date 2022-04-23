@@ -23,9 +23,10 @@
  *  SOFTWARE.
  */
 
-use crate::ConnectionPointer;
+use crate::database::ConnectionPointer;
+use crate::TOTP_NAME;
 use argon2::{self};
-use google_authenticator::GoogleAuthenticator;
+use google_authenticator::{ErrorCorrectionLevel, GoogleAuthenticator};
 use rbatis::crud::CRUD;
 use rbatis::{TimestampZ, Uuid};
 
@@ -172,8 +173,10 @@ pub struct ClientAuthenticationData {
     #[builder(setter(!strip_option, transform = |password: String| hash_password(password)))]
     password: String,
     /// The TOTP secret (base32 encoded)
-    #[builder(default = None)]
-    secret: Option<String>,
+    #[builder(default_code = r#"ClientAuthenticationData::gen_secret()"#)]
+    secret: String,
+    #[builder(default = false)]
+    totp: bool,
     /// The last registered login / grant
     #[builder(default_code = r#"TimestampZ::now()"#)]
     last_login: TimestampZ,
@@ -182,13 +185,27 @@ pub struct ClientAuthenticationData {
 }
 
 impl ClientAuthenticationData {
+    /// Generates a new random base32 encoded secret used for totp
+    pub fn gen_secret() -> String {
+        // generate random bytes
+        let mut bytes = [0u8; 32];
+        // fill
+        openssl::rand::rand_bytes(&mut bytes).unwrap();
+
+        // encode as base32
+        base32::encode(
+            base32::Alphabet::RFC4648 { padding: false },
+            bytes.as_slice(),
+        )
+    }
+
     /// Validate the given token with the totp secret of the client
     pub fn validate_totp(&self, token: &str) -> bool {
         // init the instance
         let totp = GoogleAuthenticator::new();
 
         // verify
-        totp.verify_code(self.secret.as_ref().unwrap().as_str(), token, 30, 0)
+        totp.verify_code(self.secret.as_str(), token, 30, 0)
     }
 
     /// Authenticate the login for the client based on the given password (and totp, if enabled)
@@ -199,7 +216,7 @@ impl ClientAuthenticationData {
 
         if matches {
             // check for totp activated (secret exists or not)
-            if self.secret.is_some() {
+            if self.totp {
                 // check the input
                 if token.is_none() {
                     return false;
@@ -217,6 +234,24 @@ impl ClientAuthenticationData {
         }
         false
     }
+
+    /// This returns an QrCode as svg used to enable the totp authentication via an authentication app
+    /// like google authenticator, built in password manager or Authy.
+    pub fn get_qr_code(&self, nickname: &str) -> String {
+        // return the qrCode
+        GoogleAuthenticator::new()
+            .qr_code(
+                &self.secret,
+                TOTP_NAME.as_str(),
+                nickname,
+                130,
+                130,
+                ErrorCorrectionLevel::High,
+            )
+            .unwrap()
+    }
+
+    // pub fn enable_totp(&mut self, code: &str, connection: &ConnectionPointer) -> bool {}
 }
 
 #[derive(TypedBuilder, Clone, Debug, Getters)]

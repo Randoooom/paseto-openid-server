@@ -62,7 +62,8 @@ CREATE TABLE IF NOT EXISTS client_authentication_data
 (
     uuid       uuid PRIMARY KEY      DEFAULT gen_random_uuid(),
     password   varchar(255) NOT NULL,
-    secret     varchar(255) NULL,
+    secret     varchar(255) NOT NULL,
+    totp       bool                  DEFAULT FALSE,
     last_login timestamptz  NOT NULL DEFAULT CURRENT_TIMESTAMP,
     client     uuid         NOT NULL REFERENCES clients (sub)
 );

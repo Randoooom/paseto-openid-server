@@ -30,8 +30,6 @@ extern crate serde_json;
 #[macro_use]
 extern crate log;
 #[macro_use]
-extern crate rocket;
-#[macro_use]
 extern crate getset;
 #[macro_use]
 extern crate typed_builder;
@@ -41,50 +39,23 @@ extern crate rbatis;
 #[macro_use]
 extern crate lazy_static;
 
-use crate::database::ConnectionPointer;
-use crate::mail::MailSender;
-use crate::paseto::TokenSigner;
-use rocket::http::Method;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use axum::http::{header, Method};
+use axum::{routing::post, Extension, Router};
+use std::net::SocketAddr;
+use std::str::FromStr;
+use tower_http::cors::{CorsLayer, Origin};
+use tower_http::trace::TraceLayer;
 
 mod database;
+mod locator;
 mod logger;
-mod mail;
+mod middleware;
 mod openid;
-mod paseto;
-mod responder;
 mod routes;
-
-#[derive(Getters)]
-#[get = "pub"]
-pub struct Locator {
-    connection: ConnectionPointer,
-    // the paseto instance
-    paseto: TokenSigner,
-    mail: MailSender,
-}
-
-impl Locator {
-    pub async fn new() -> Self {
-        // establish the connection
-        let connection = database::establish_connection().await;
-        // create new instance of the signer
-        let paseto = TokenSigner::new();
-        let mail = MailSender::new();
-
-        Self {
-            connection,
-            paseto,
-            mail,
-        }
-    }
-}
-
-pub type LocatorPointer = Arc<Mutex<Locator>>;
 
 lazy_static! {
     pub static ref ROOT: String = std::env::var("ROOT").unwrap();
+    pub static ref TOTP_NAME: String = std::env::var("TOTP_NAME").unwrap();
 }
 
 #[tokio::main]
@@ -95,50 +66,39 @@ async fn main() {
         .unwrap();
     // init dotenv
     dotenv::dotenv().expect("Use the .env file");
-
-    // load the cors fairing
-    let cors = {
-        let allowed_origins =
-            rocket_cors::AllowedOrigins::some_exact(vec![ROOT.clone()].as_slice());
-        // cors options
-        let cors_options = rocket_cors::CorsOptions {
-            allowed_origins,
-            allowed_methods: vec![
-                Method::Get,
-                Method::Post,
-                Method::Put,
-                Method::Delete,
-                Method::Options,
-                Method::Head,
-            ]
-            .into_iter()
-            .map(From::from)
-            .collect(),
-            allow_credentials: true,
-            ..Default::default()
-        };
-
-        cors_options.to_cors().unwrap()
-    };
-
     // init the locator
-    let locator = Locator::new().await;
+    let locator = locator::Locator::new().await;
 
-    // build the rocket
-    rocket::build()
-        .mount(
-            "/",
-            routes![
-                routes::authentication::post_login,
-                routes::authentication::post_signup,
-            ],
+    // build axum
+    let app = Router::new()
+        .route("/auth/login", post(routes::authentication::post_login))
+        .route("/auth/signup", post(routes::authentication::post_signup))
+        .layer(Extension(locator))
+        // enable CORS
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Origin::exact(ROOT.as_str().parse().unwrap()))
+                .allow_methods(vec![
+                    Method::GET,
+                    Method::POST,
+                    Method::PUT,
+                    Method::DELETE,
+                    Method::HEAD,
+                    Method::OPTIONS,
+                ])
+                .allow_headers(vec![header::AUTHORIZATION, header::CONTENT_TYPE]),
         )
-        // attach cors
-        .attach(cors)
-        // manage the locator
-        .manage(Arc::new(Mutex::new(locator)))
-        // launch it
-        .launch()
+        // enable logging
+        .layer(TraceLayer::new_for_http());
+    // build the address
+    let address = SocketAddr::from((
+        [127, 0, 0, 1],
+        std::env::var("PORT").unwrap().parse::<u16>().unwrap(),
+    ));
+    // run
+    info!("Axum server listening on {}", address);
+    axum::Server::bind(&address)
+        .serve(app.into_make_service())
         .await
         .unwrap();
 }

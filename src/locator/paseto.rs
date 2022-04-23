@@ -32,8 +32,6 @@ pub struct TokenSigner {
     // for public
     private_key: Key<64>,
     public_key: Key<32>,
-    // for local auth
-    secret: Key<32>,
 }
 
 impl TokenSigner {
@@ -43,12 +41,12 @@ impl TokenSigner {
         // into the 64byte ec signature key manually
 
         // load the keys
-        let private_key_raw = PKey::private_key_from_pem(include_bytes!("../private_key.pem"))
+        let private_key_raw = PKey::private_key_from_pem(include_bytes!("../../private_key.pem"))
             .unwrap()
             // convert to raw
             .raw_private_key()
             .unwrap();
-        let public_key_raw = PKey::public_key_from_pem(include_bytes!("../public_key.pem"))
+        let public_key_raw = PKey::public_key_from_pem(include_bytes!("../../public_key.pem"))
             .unwrap()
             // convert to raw
             .raw_public_key()
@@ -63,19 +61,15 @@ impl TokenSigner {
         let public_key = Key::<32>::from(public_key_raw.as_slice());
         let private_key = Key::<64>::from(bytes);
 
-        // generate the local secret
-        let secret = Key::<32>::try_new_random().unwrap();
-
         // construct
         Self {
             public_key,
             private_key,
-            secret,
         }
     }
 
     /// Sign a new PASETO-Token with the given sub for use over openid
-    pub fn sign_public(&self, sub: &Uuid) -> String {
+    pub fn sign(&self, sub: &Uuid) -> String {
         // build private key
         let private_key =
             PasetoAsymmetricPrivateKey::<V4, Public>::from(self.private_key.as_slice());
@@ -89,21 +83,6 @@ impl TokenSigner {
             .set_claim(SubjectClaim::from(sub.as_str()))
             .set_claim(ExpirationClaim::try_from(expiry.to_rfc3339()).unwrap())
             .build(&private_key)
-            .unwrap();
-        result
-    }
-
-    /// Sign new PASETO local token for authentication inside the openid provider
-    pub fn sign_local(&self, sub: &Uuid) -> String {
-        // build key
-        let key = PasetoSymmetricKey::<V4, Local>::from(self.secret.clone());
-        // convert sub
-        let sub = sub.to_string();
-
-        // sign the token
-        let result = PasetoBuilder::<V4, Local>::default()
-            .set_claim(SubjectClaim::from(sub.as_str()))
-            .build(&key)
             .unwrap();
         result
     }
