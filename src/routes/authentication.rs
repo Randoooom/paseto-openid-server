@@ -34,8 +34,6 @@ use axum::{Extension, Json};
 use axum_extra::extract::cookie::{Cookie, SameSite};
 use axum_extra::extract::CookieJar;
 use rbatis::crud::CRUD;
-use serde::Serialize;
-use serde_json::Value;
 
 #[derive(Deserialize, Serialize)]
 pub struct AuthenticationRequest {
@@ -53,7 +51,7 @@ pub async fn post_login(
     cookies: CookieJar,
 ) -> impl IntoResponse {
     // lock the locator
-    let locked = locator.lock().await;
+    let mut locked = locator.lock().await;
 
     // get the client
     let client = Client::from_nickname(data.nickname.as_str(), locked.connection())
@@ -69,8 +67,8 @@ pub async fn post_login(
         if let Some(authentication_data) = authentication_data {
             // authenticate
             if authentication_data.login(data.password.as_str(), data.token.as_deref()) {
-                // sign the token
-                let token = locked.paseto().sign(client.sub());
+                // start the session
+                let token = locked.auth_mut().start_session(client.sub().clone());
 
                 // build the cookie
                 let cookie = Cookie::build("SessionID", token.clone())

@@ -42,7 +42,6 @@ extern crate lazy_static;
 use axum::http::{header, Method};
 use axum::{routing::post, Extension, Router};
 use std::net::SocketAddr;
-use std::str::FromStr;
 use tower_http::cors::{CorsLayer, Origin};
 use tower_http::trace::TraceLayer;
 
@@ -56,6 +55,10 @@ mod routes;
 lazy_static! {
     pub static ref ROOT: String = std::env::var("ROOT").unwrap();
     pub static ref TOTP_NAME: String = std::env::var("TOTP_NAME").unwrap();
+    pub static ref LOCAL_SESSION_LENGTH: usize = std::env::var("LOCAL_SESSION_LENGTH")
+        .unwrap()
+        .parse()
+        .unwrap();
 }
 
 #[tokio::main]

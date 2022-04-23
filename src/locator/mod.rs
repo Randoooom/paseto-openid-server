@@ -24,21 +24,25 @@
  */
 
 use crate::database::ConnectionPointer;
+use crate::locator::auth::AuthHandler;
 use crate::locator::mail::MailSender;
 use crate::locator::paseto::TokenSigner;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+pub mod auth;
 pub mod mail;
 pub mod paseto;
 
-#[derive(Getters)]
+#[derive(Getters, MutGetters)]
 #[get = "pub"]
+#[get_mut = "pub"]
 pub struct Locator {
     connection: ConnectionPointer,
     // the paseto instance
     paseto: TokenSigner,
     mail: MailSender,
+    auth: AuthHandler,
 }
 
 pub type LocatorPointer = Arc<Mutex<Locator>>;
@@ -50,11 +54,13 @@ impl Locator {
         // create new instance of the signer
         let paseto = TokenSigner::new();
         let mail = MailSender::new();
+        let auth = AuthHandler::new();
 
         Arc::new(Mutex::new(Self {
             connection,
             paseto,
             mail,
+            auth,
         }))
     }
 }
