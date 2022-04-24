@@ -42,14 +42,6 @@ pub async fn establish_connection() -> Rbatis {
         .await
         .expect("Establish postgres connection");
 
-    cfg_if! {
-        if #[cfg(test)] {
-            // drop all tables
-            let sql = include_str!("drop.sql");
-            rbatis.exec(sql , vec![]).await.unwrap();
-        }
-    };
-
     // init the database
     let sql = include_str!("up.sql");
     rbatis.exec(sql, vec![]).await.unwrap();

@@ -40,8 +40,7 @@ extern crate rbatis;
 extern crate lazy_static;
 #[macro_use]
 extern crate thiserror;
-#[macro_use]
-extern crate cfg_if;
+extern crate core;
 
 use crate::middleware::require_session;
 use axum::http::{header, Method};
@@ -58,6 +57,7 @@ mod logger;
 mod middleware;
 mod openid;
 mod routes;
+#[cfg(test)]
 mod tests;
 
 lazy_static! {

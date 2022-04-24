@@ -23,7 +23,7 @@
  *  SOFTWARE.
  */
 
-DROP TABLE IF EXISTS addresses CASCADE;
-DROP TABLE IF EXISTS client_authentication_data CASCADE;
-DROP TABLE IF EXISTS client_verification_tokens CASCADE;
-DROP TABLE IF EXISTS clients CASCADE;
+DELETE FROM addresses;
+DELETE FROM client_authentication_data;
+DELETE FROM client_verification_tokens;
+DELETE FROM clients;

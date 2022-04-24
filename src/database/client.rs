@@ -262,18 +262,18 @@ impl Default for Client {
     fn default() -> Self {
         Self {
             sub: Uuid::new(),
-            name: "Nick Name".to_string(),
-            given_name: "Nick".to_string(),
-            family_name: "Name".to_string(),
+            name: "Default Client".to_string(),
+            given_name: "Default".to_string(),
+            family_name: "Client".to_string(),
             middle_name: None,
-            nickname: "Nickname".to_string(),
+            nickname: "dfclient".to_string(),
             preferred_username: "Crazy Name".to_string(),
             // TODO
             profile: "TODO".to_string(),
             // TODO
             picture: "TODO".to_string(),
             website: None,
-            email: "spam@randoms.rocks".to_string(),
+            email: "spamm@randoms.rocks".to_string(),
             email_verified: false,
             gender: Gender::Other,
             birthdate: "".to_string(),
@@ -290,11 +290,13 @@ impl Default for Client {
 mod tests {
     use super::*;
     use crate::database::establish_connection;
+    use crate::tests::TestSuite;
     use rbatis::rbatis::Rbatis;
 
     async fn setup() -> (Rbatis, Client) {
         let client = Client::default();
         let connection = establish_connection().await;
+        TestSuite::reset_database(&connection).await;
 
         connection.save(&client, &[]).await.unwrap();
         (connection, client)
