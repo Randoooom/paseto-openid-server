@@ -67,7 +67,7 @@ impl TestSuite {
             .locality("Berlin")
             .region("Berlin")
             .postal_code("10557")
-            .street_address(" Willy-Brandt-Straße 1")
+            .street_address("Willy-Brandt-Straße 1")
             .formatted("Willy-Brandt-Straße 1 10557 Berlin")
             .build();
 
