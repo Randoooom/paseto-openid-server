@@ -54,17 +54,18 @@ pub async fn post_login(
 ) -> impl IntoResponse {
     // lock the locator
     let mut locked = locator.lock().await;
+    // lock the connection
+    let connection = locked.connection().lock().await;
 
     // get the client
-    let client = Client::from_nickname(data.nickname.as_str(), locked.connection())
+    let client = Client::from_nickname(data.nickname.as_str(), &connection)
         .await
         .unwrap();
     if let Some(client) = client {
         // get the auth data
-        let authentication_data = client
-            .authentication_data(locked.connection())
-            .await
-            .unwrap();
+        let authentication_data = client.authentication_data(&connection).await.unwrap();
+        // unlock the connection
+        drop(connection);
 
         if let Some(authentication_data) = authentication_data {
             // authenticate
@@ -222,4 +223,38 @@ pub async fn post_logout(
     let cookies = cookies.remove(cookie);
 
     (StatusCode::OK, cookies)
+}
+
+#[cfg(test)]
+impl Default for SignupRequest {
+    fn default() -> Self {
+        Self {
+            name: "Nick Name".to_string(),
+            given_name: "Nick".to_string(),
+            family_name: "Name".to_string(),
+            middle_name: None,
+            nickname: "Nickname".to_string(),
+            preferred_username: "Crazy Name".to_string(),
+            // TODO
+            profile: "TODO".to_string(),
+            // TODO
+            picture: "TODO".to_string(),
+            website: None,
+            email: "spam@randoms.rocks".to_string(),
+            gender: Gender::Other,
+            birthdate: "".to_string(),
+            zoneinfo: "Europe/Berlin".to_string(),
+            locale: "de".to_string(),
+            phone_number: None,
+            password: "password".to_string(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_signup() {}
 }

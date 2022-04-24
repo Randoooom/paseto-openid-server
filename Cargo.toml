@@ -14,6 +14,7 @@ lettre = { version = "0.10.0-rc.4", features = ["tokio1", "builder", "tokio1-nat
 axum-extra = { version = "0.2.1", features = ["cookie"] }
 tower-http = { version = "0.2.5", features = ["cors", "trace"] }
 
+cfg-if = "1.0.0"
 axum = "0.5.3"
 lettre_email = "0.9"
 regex = "1.5.5"

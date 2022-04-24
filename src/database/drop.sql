@@ -23,47 +23,7 @@
  *  SOFTWARE.
  */
 
-use rbatis::rbatis::Rbatis;
-use std::sync::Arc;
-use tokio::sync::Mutex;
-
-pub mod client;
-
-/// The connection wrapped into mutex and arc
-pub type ConnectionPointer = Arc<Mutex<Rbatis>>;
-
-/// Establish the postgres connection with the env vars
-pub async fn establish_connection() -> Rbatis {
-    //  init orm
-    let rbatis = Rbatis::new();
-    // link to the database
-    rbatis
-        .link(std::env::var("DATABASE_URL").unwrap().as_str())
-        .await
-        .expect("Establish postgres connection");
-
-    cfg_if! {
-        if #[cfg(test)] {
-            // drop all tables
-            let sql = include_str!("drop.sql");
-            rbatis.exec(sql , vec![]).await.unwrap();
-        }
-    };
-
-    // init the database
-    let sql = include_str!("up.sql");
-    rbatis.exec(sql, vec![]).await.unwrap();
-
-    rbatis
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_connection() {
-        // would panic here on failure, because of the unwraps
-        let _ = establish_connection().await;
-    }
-}
+DROP TABLE IF EXISTS addresses CASCADE;
+DROP TABLE IF EXISTS client_authentication_data CASCADE;
+DROP TABLE IF EXISTS client_verification_tokens CASCADE;
+DROP TABLE IF EXISTS clients CASCADE;
