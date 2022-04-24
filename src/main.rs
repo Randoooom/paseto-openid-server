@@ -38,6 +38,8 @@ extern crate argon2;
 extern crate rbatis;
 #[macro_use]
 extern crate lazy_static;
+#[macro_use]
+extern crate thiserror;
 
 use crate::middleware::require_session;
 use axum::http::{header, Method};
@@ -48,6 +50,7 @@ use tower_http::cors::{CorsLayer, Origin};
 use tower_http::trace::TraceLayer;
 
 mod database;
+mod error;
 mod locator;
 mod logger;
 mod middleware;

@@ -24,6 +24,7 @@
  */
 
 use crate::database::client::{Client, ClientAuthenticationData, ClientVerificationToken, Gender};
+use crate::error::ResponseError;
 use crate::locator::mail::MailOptions;
 use crate::locator::LocatorPointer;
 use crate::middleware::SessionId;
@@ -81,17 +82,13 @@ pub async fn post_login(
                 let cookies = cookies.add(cookie);
 
                 // return the signed token
-                return (StatusCode::OK, cookies, Json(json!({ "token": token })));
+                return Ok((StatusCode::OK, cookies, Json(json!({ "token": token }))));
             }
         }
     }
 
     // return 401
-    (
-        StatusCode::UNAUTHORIZED,
-        cookies,
-        Json(json!({"error": "Unauthorized"})),
-    )
+    Err(ResponseError::Unauthorized)
 }
 
 #[derive(Deserialize, Serialize)]
@@ -139,17 +136,13 @@ pub async fn post_signup(
 
     // verify the strength of the password
     if !Verification::password_strong_enough(data.password.as_str()) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "Password not strong enough"})),
-        );
+        return Err(ResponseError::BadRequest(
+            "Password not strong enough".into(),
+        ));
     }
     // validate the email (check via regex)
     if !Verification::email_valid(data.email.as_str()) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "Email not valid"})),
-        );
+        return Err(ResponseError::BadRequest("Email not valid".into()));
     }
 
     // build the client
@@ -209,7 +202,7 @@ pub async fn post_signup(
         locked.mail().send(mail).await.unwrap();
     };
 
-    (StatusCode::CREATED, Json(json!(client)))
+    Ok((StatusCode::CREATED, Json(json!(client))))
 }
 
 pub async fn post_logout(

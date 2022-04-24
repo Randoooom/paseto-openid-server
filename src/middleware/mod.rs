@@ -24,11 +24,11 @@
  */
 
 use crate::database::client::Client;
+use crate::error::ResponseError;
 use crate::locator::LocatorPointer;
-use axum::http::{Request, StatusCode};
+use axum::http::Request;
 use axum::middleware::Next;
 use axum::response::IntoResponse;
-use axum::Json;
 use axum_extra::extract::CookieJar;
 use rbatis::crud::CRUD;
 
@@ -71,16 +71,8 @@ pub async fn require_session<B>(mut request: Request<B>, next: Next<B>) -> impl 
             }
 
             drop(locator);
-            (
-                StatusCode::UNAUTHORIZED,
-                Json(json!({"error": "Unauthorized"})),
-            )
-                .into_response()
+            ResponseError::Unauthorized.into_response()
         }
-        None => (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"error": "Unauthorized"})),
-        )
-            .into_response(),
+        None => ResponseError::Unauthorized.into_response(),
     }
 }
