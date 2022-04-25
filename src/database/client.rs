@@ -273,7 +273,7 @@ impl Default for Client {
             // TODO
             picture: "TODO".to_string(),
             website: None,
-            email: "spamm@randoms.rocks".to_string(),
+            email: env!("TESTMAIL").to_string(),
             email_verified: false,
             gender: Gender::Other,
             birthdate: "".to_string(),

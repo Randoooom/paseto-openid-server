@@ -240,7 +240,7 @@ impl Default for SignupRequest {
             // TODO
             picture: "TODO".to_string(),
             website: None,
-            email: "spam@randoms.rocks".to_string(),
+            email: env!("TESTMAIL").to_string(),
             gender: Gender::Other,
             birthdate: "".to_string(),
             zoneinfo: "Europe/Berlin".to_string(),

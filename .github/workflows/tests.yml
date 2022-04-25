@@ -2,15 +2,38 @@ on: [ pull_request ]
 
 name: Tests
 
+env:
+  DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+  ROOT: https://exmaple.com
+  TOTP_NAME: OpenId
+  LOCAL_SESSION_LENGTH: 60
+  PORT: 8000
+  SMTP_HOST: ${{ secrets.SMTP_HOST }}
+  SMTP_USER: ${{ secrets.SMTP_USER }}
+  SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+  TESTMAIL: ${{ secrets.TESTMAIL }}
+
 jobs:
   test:
     name: Tests
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:latest
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
+      - name: Keygen
+        run: ./keygen.sh
       - name: Check
         uses: actions-rs/cargo@v1
         with:
