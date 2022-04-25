@@ -23,39 +23,7 @@
  *  SOFTWARE.
  */
 
-use rbatis::rbatis::Rbatis;
-use std::sync::Arc;
-use tokio::sync::Mutex;
-
-pub mod client;
-
-/// The connection wrapped into mutex and arc
-pub type ConnectionPointer = Arc<Mutex<Rbatis>>;
-
-/// Establish the postgres connection with the env vars
-pub async fn establish_connection() -> Rbatis {
-    //  init orm
-    let rbatis = Rbatis::new();
-    // link to the database
-    rbatis
-        .link(std::env::var("DATABASE_URL").unwrap().as_str())
-        .await
-        .expect("Establish postgres connection");
-
-    // init the database
-    let sql = include_str!("up.sql");
-    rbatis.exec(sql, vec![]).await.unwrap();
-
-    rbatis
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_connection() {
-        // would panic here on failure, because of the unwraps
-        let _ = establish_connection().await;
-    }
-}
+DELETE FROM addresses;
+DELETE FROM client_authentication_data;
+DELETE FROM client_verification_tokens;
+DELETE FROM clients;

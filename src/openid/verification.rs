@@ -49,3 +49,27 @@ impl Verification {
         regex.is_match(email)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_password_strength() {
+        let invalid = "12345";
+        assert!(!Verification::password_strong_enough(invalid));
+
+        // these are just random typed chars on the keyboard
+        let valid = "J*Wdtyfawdg*do0@e41";
+        assert!(Verification::password_strong_enough(valid));
+    }
+
+    #[test]
+    fn test_mail_validation() {
+        let invalid = "crazyemail@we";
+        assert!(!Verification::email_valid(invalid));
+
+        let valid = "example@example.com";
+        assert!(Verification::email_valid(valid));
+    }
+}

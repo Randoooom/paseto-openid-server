@@ -40,6 +40,7 @@ extern crate rbatis;
 extern crate lazy_static;
 #[macro_use]
 extern crate thiserror;
+extern crate core;
 
 use crate::middleware::require_session;
 use axum::http::{header, Method};
@@ -56,6 +57,8 @@ mod logger;
 mod middleware;
 mod openid;
 mod routes;
+#[cfg(test)]
+mod tests;
 
 lazy_static! {
     pub static ref ROOT: String = std::env::var("ROOT").unwrap();
@@ -74,11 +77,28 @@ async fn main() {
         .unwrap();
     // init dotenv
     dotenv::dotenv().expect("Use the .env file");
+
+    // build axum
+    let app = app().await;
+    // build the address
+    let address = SocketAddr::from((
+        [127, 0, 0, 1],
+        std::env::var("PORT").unwrap().parse::<u16>().unwrap(),
+    ));
+    // run
+    info!("Axum server listening on {}", address);
+    axum::Server::bind(&address)
+        .serve(app.into_make_service())
+        .await
+        .unwrap();
+}
+
+async fn app() -> Router {
     // init the locator
     let locator = locator::Locator::new().await;
 
     // build axum
-    let app = Router::new()
+    Router::new()
         .route("/auth/login", post(routes::authentication::post_login))
         .route("/auth/signup", post(routes::authentication::post_signup))
         .route(
@@ -101,16 +121,5 @@ async fn main() {
                 .allow_headers(vec![header::AUTHORIZATION, header::CONTENT_TYPE]),
         )
         // enable logging
-        .layer(TraceLayer::new_for_http());
-    // build the address
-    let address = SocketAddr::from((
-        [127, 0, 0, 1],
-        std::env::var("PORT").unwrap().parse::<u16>().unwrap(),
-    ));
-    // run
-    info!("Axum server listening on {}", address);
-    axum::Server::bind(&address)
-        .serve(app.into_make_service())
-        .await
-        .unwrap();
+        .layer(TraceLayer::new_for_http())
 }

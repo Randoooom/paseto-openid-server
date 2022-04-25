@@ -23,14 +23,14 @@
  *  SOFTWARE.
  */
 
-use crate::database::ConnectionPointer;
 use crate::TOTP_NAME;
 use argon2::{self};
 use google_authenticator::{ErrorCorrectionLevel, GoogleAuthenticator};
 use rbatis::crud::CRUD;
+use rbatis::rbatis::Rbatis;
 use rbatis::{TimestampZ, Uuid};
 
-#[derive(Clone, Deserialize, Serialize, Debug)]
+#[derive(Clone, Deserialize, Serialize, Debug, PartialEq)]
 pub enum Gender {
     Male,
     Female,
@@ -38,7 +38,7 @@ pub enum Gender {
 }
 
 /// Covers https://openid.net/specs/openid-connect-basic-1_0.html#StandardClaims
-#[derive(TypedBuilder, Clone, Debug, Getters)]
+#[derive(TypedBuilder, Clone, Debug, Getters, PartialEq)]
 #[crud_table(id_name: "sub" | id_type: "Uuid" | table_name: "clients")]
 #[get = "pub"]
 #[builder(field_defaults(setter(into)))]
@@ -91,34 +91,25 @@ impl Client {
     /// Get the client by the nickname
     pub async fn from_nickname(
         nickname: &str,
-        connection: &ConnectionPointer,
+        connection: &Rbatis,
     ) -> rbatis::Result<Option<Self>> {
-        // lock the connection
-        let locked = connection.lock().await;
-
         // collect
-        locked.fetch_by_column("nickname", nickname).await
+        connection.fetch_by_column("nickname", nickname).await
     }
 
     /// Get the associated address object of the user
-    pub async fn address(&self, connection: &ConnectionPointer) -> rbatis::Result<Option<Address>> {
-        // lock the connection
-        let locked = connection.lock().await;
-
+    pub async fn address(&self, connection: &Rbatis) -> rbatis::Result<Option<Address>> {
         // collect
-        locked.fetch_by_column("client", self.sub.clone()).await
+        connection.fetch_by_column("client", self.sub.clone()).await
     }
 
     // Get the associated authentication data object of the user
     pub async fn authentication_data(
         &self,
-        connection: &ConnectionPointer,
+        connection: &Rbatis,
     ) -> rbatis::Result<Option<ClientAuthenticationData>> {
-        // lock the connection
-        let locked = connection.lock().await;
-
         // collect
-        locked.fetch_by_column("client", self.sub.clone()).await
+        connection.fetch_by_column("client", self.sub.clone()).await
     }
 }
 
@@ -264,4 +255,79 @@ pub struct ClientVerificationToken {
     uuid: Uuid,
     /// the associated client
     client: Uuid,
+}
+
+#[cfg(test)]
+impl Default for Client {
+    fn default() -> Self {
+        Self {
+            sub: Uuid::new(),
+            name: "Default Client".to_string(),
+            given_name: "Default".to_string(),
+            family_name: "Client".to_string(),
+            middle_name: None,
+            nickname: "dfclient".to_string(),
+            preferred_username: "Crazy Name".to_string(),
+            // TODO
+            profile: "TODO".to_string(),
+            // TODO
+            picture: "TODO".to_string(),
+            website: None,
+            email: env!("TESTMAIL").to_string(),
+            email_verified: false,
+            gender: Gender::Other,
+            birthdate: "".to_string(),
+            zoneinfo: "Europe/Berlin".to_string(),
+            locale: "de".to_string(),
+            phone_number: None,
+            phone_number_verified: false,
+            updated_at: TimestampZ::now(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::database::establish_connection;
+    use crate::tests::TestSuite;
+    use rbatis::rbatis::Rbatis;
+
+    async fn setup() -> (Rbatis, Client) {
+        let client = Client::default();
+        let connection = establish_connection().await;
+        TestSuite::reset_database(&connection).await;
+
+        connection.save(&client, &[]).await.unwrap();
+        (connection, client)
+    }
+
+    #[tokio::test]
+    async fn test_from_nickname() {
+        let (connection, client) = setup().await;
+
+        let second = Client::from_nickname(client.nickname(), &connection)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(client.sub, second.sub)
+    }
+
+    #[tokio::test]
+    async fn test_associated() {
+        let (connection, client) = setup().await;
+
+        // build the auth
+        let auth = ClientAuthenticationData::builder()
+            .client(client.sub().clone())
+            .password("password".into())
+            .build();
+        // save it
+        connection.save(&auth, &[]).await.unwrap();
+
+        // get the auth
+        let auth = client.authentication_data(&connection).await.unwrap();
+        assert!(auth.is_some());
+        assert_eq!(auth.unwrap().client(), client.sub());
+    }
 }
