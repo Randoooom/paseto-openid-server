@@ -58,7 +58,7 @@ mod tests {
         // send the request
         let response = suite
             .connector
-            .post("/user/delete")
+            .post("/client/delete")
             .header(AUTHORIZATION, cookie)
             .send()
             .await;

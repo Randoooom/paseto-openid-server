@@ -105,7 +105,7 @@ async fn app() -> Router {
             post(routes::authentication::post_logout).layer(from_fn(require_session)),
         )
         .route(
-            "/user/delete",
+            "/client/delete",
             post(routes::client::post_delete).layer(from_fn(require_session)),
         )
         .layer(Extension(locator))
