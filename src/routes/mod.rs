@@ -24,3 +24,4 @@
  */
 
 pub mod authentication;
+pub mod client;

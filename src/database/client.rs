@@ -38,9 +38,10 @@ pub enum Gender {
 }
 
 /// Covers https://openid.net/specs/openid-connect-basic-1_0.html#StandardClaims
-#[derive(TypedBuilder, Clone, Debug, Getters, PartialEq)]
+#[derive(TypedBuilder, Clone, Debug, Getters, PartialEq, Setters)]
 #[crud_table(id_name: "sub" | id_type: "Uuid" | table_name: "clients")]
 #[get = "pub"]
+#[set = "pub"]
 #[builder(field_defaults(setter(into)))]
 pub struct Client {
     /// the unique value for identification
@@ -103,7 +104,7 @@ impl Client {
         connection.fetch_by_column("client", self.sub.clone()).await
     }
 
-    // Get the associated authentication data object of the user
+    /// Get the associated authentication data object of the user
     pub async fn authentication_data(
         &self,
         connection: &Rbatis,
@@ -111,11 +112,35 @@ impl Client {
         // collect
         connection.fetch_by_column("client", self.sub.clone()).await
     }
+
+    /// Delete the current client
+    pub async fn delete(self, connection: &Rbatis) {
+        // remove the associated data
+        connection
+            .remove_by_column::<Address, _>("client", self.sub.clone())
+            .await
+            .unwrap();
+        connection
+            .remove_by_column::<ClientAuthenticationData, _>("client", self.sub.clone())
+            .await
+            .unwrap();
+        connection
+            .remove_by_column::<ClientVerificationToken, _>("client", self.sub.clone())
+            .await
+            .unwrap();
+
+        // remove the client
+        connection
+            .remove_by_column::<Self, _>("sub", self.sub())
+            .await
+            .unwrap();
+    }
 }
 
-#[derive(TypedBuilder, Clone, Debug, Getters)]
+#[derive(TypedBuilder, Clone, Debug, Getters, Setters)]
 #[crud_table(id_name: "uuid" | id_type: "Uuid" | table_name: "addresses")]
 #[get = "pub"]
+#[set = "pub"]
 #[builder(field_defaults(setter(into)))]
 pub struct Address {
     /// the identifier of the address
@@ -137,7 +162,7 @@ pub struct Address {
     client: Uuid,
 }
 
-fn hash_password(password: String) -> String {
+pub fn hash_password(password: String) -> String {
     // build the argon config
     let config = argon2::Config {
         variant: argon2::Variant::Argon2d,
@@ -152,9 +177,10 @@ fn hash_password(password: String) -> String {
     argon2::hash_encoded(password.as_bytes(), salt.as_slice(), &config).unwrap()
 }
 
-#[derive(TypedBuilder, Clone, Debug, Getters)]
+#[derive(TypedBuilder, Clone, Debug, Getters, Setters)]
 #[crud_table(id_name: "uuid" | id_type: "Uuid" | table_name: "client_authentication_data")]
 #[get = "pub"]
+#[set = "pub"]
 #[builder(field_defaults(setter(into)))]
 pub struct ClientAuthenticationData {
     /// the unique identifier for the data

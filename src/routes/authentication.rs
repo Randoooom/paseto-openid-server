@@ -23,7 +23,9 @@
  *  SOFTWARE.
  */
 
-use crate::database::client::{Client, ClientAuthenticationData, ClientVerificationToken, Gender};
+use crate::database::client::{
+    hash_password, Client, ClientAuthenticationData, ClientVerificationToken, Gender,
+};
 use crate::error::ResponseError;
 use crate::locator::mail::MailOptions;
 use crate::locator::LocatorPointer;
@@ -33,8 +35,6 @@ use crate::ROOT;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::{Extension, Json};
-use axum_extra::extract::cookie::{Cookie, SameSite};
-use axum_extra::extract::CookieJar;
 use rbatis::crud::CRUD;
 
 #[derive(Deserialize, Serialize, TypedBuilder)]
@@ -50,12 +50,11 @@ pub struct AuthenticationRequest {
 pub async fn post_login(
     Json(data): Json<AuthenticationRequest>,
     Extension(locator): Extension<LocatorPointer>,
-    cookies: CookieJar,
 ) -> impl IntoResponse {
     // lock the locator
     let mut locked = locator.lock().await;
-    // lock the connection
-    let connection = locked.connection().lock().await;
+    // get the connection
+    let connection = locked.connection();
 
     // get the client
     let client = Client::from_nickname(data.nickname.as_str(), &connection)
@@ -64,26 +63,14 @@ pub async fn post_login(
     if let Some(client) = client {
         // get the auth data
         let authentication_data = client.authentication_data(&connection).await.unwrap();
-        // unlock the connection
-        drop(connection);
 
         if let Some(authentication_data) = authentication_data {
             // authenticate
             if authentication_data.login(data.password.as_str(), data.token.as_deref()) {
                 // start the session
-                let token = locked.auth_mut().start_session(client.sub().clone());
-
-                // build the cookie
-                let cookie = Cookie::build("session_id", token.clone())
-                    .secure(true)
-                    .same_site(SameSite::Strict)
-                    .http_only(true)
-                    .finish();
-                // set the cookie
-                let cookies = cookies.add(cookie);
-
-                // return the signed token
-                return Ok((StatusCode::OK, cookies, Json(json!({ "token": token }))));
+                let session = locked.auth_mut().start_session(client.sub().clone());
+                // return the session
+                return Ok((StatusCode::OK, Json(json!({ "session_id": session }))));
             }
         }
     }
@@ -171,8 +158,8 @@ pub async fn post_signup(
         .password(data.password.clone())
         .build();
 
-    // lock the connection
-    let connection = locked.connection().lock().await;
+    // get the connection
+    let connection = locked.connection();
     // save the data
     connection.save(&client, &[]).await.unwrap();
     connection.save(&auth_data, &[]).await.unwrap();
@@ -209,7 +196,6 @@ pub async fn post_signup(
 pub async fn post_logout(
     Extension(locator): Extension<LocatorPointer>,
     Extension(session_id): Extension<SessionId>,
-    cookies: CookieJar,
 ) -> impl IntoResponse {
     // lock the locator
     let mut locked = locator.lock().await;
@@ -217,12 +203,139 @@ pub async fn post_logout(
     // end the session
     locked.auth_mut().end_session(session_id.0.as_str());
 
-    // get the cookie
-    let cookie = cookies.get(session_id.0.as_str()).unwrap().clone();
-    // remove the cookie
-    let cookies = cookies.remove(cookie);
+    StatusCode::OK
+}
 
-    (StatusCode::OK, cookies)
+#[derive(Deserialize, Serialize)]
+pub struct UpdatePassword {
+    password: String,
+}
+
+pub async fn put_password(
+    Extension(locator): Extension<LocatorPointer>,
+    Extension(client): Extension<Client>,
+    Json(update): Json<UpdatePassword>,
+    Extension(session_id): Extension<SessionId>,
+) -> impl IntoResponse {
+    // verify the strength of the password
+    if !Verification::password_strong_enough(update.password.as_str()) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "password not strong enough"})),
+        );
+    }
+
+    // lock
+    let mut locator = locator.lock().await;
+    let connection = locator.connection();
+    // get the auth data of the client
+    let mut auth = client
+        .authentication_data(connection)
+        .await
+        .unwrap()
+        .unwrap();
+
+    // hash the new password
+    let hashed = hash_password(update.password);
+    // update
+    auth.set_password(hashed);
+    connection.update_by_column("uuid", &auth).await.unwrap();
+
+    // end the session
+    locator.auth_mut().end_session(session_id.0.as_str());
+
+    (
+        StatusCode::OK,
+        Json(json!({"message": "Changed password. Session canceled."})),
+    )
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct ActivateTOTP {
+    token: String,
+}
+
+pub async fn post_activate_totp(
+    Extension(locator): Extension<LocatorPointer>,
+    Extension(client): Extension<Client>,
+    Json(activate): Json<ActivateTOTP>,
+) -> impl IntoResponse {
+    // lock the locator
+    let locator = locator.lock().await;
+    let connection = locator.connection();
+
+    // get the auth data
+    let mut auth = client
+        .authentication_data(connection)
+        .await
+        .unwrap()
+        .unwrap();
+    // verify the token
+    if !auth.validate_totp(activate.token.as_str()) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "Invalid token"})),
+        );
+    }
+
+    // update
+    auth.set_totp(true);
+    connection.update_by_column("uuid", &auth).await.unwrap();
+
+    (StatusCode::OK, Json(json!({"message": "Enabled"})))
+}
+
+pub async fn post_disable_totp(
+    Extension(locator): Extension<LocatorPointer>,
+    Extension(client): Extension<Client>,
+    Json(verification): Json<ActivateTOTP>,
+) -> impl IntoResponse {
+    // lock the locator
+    let locator = locator.lock().await;
+    let connection = locator.connection();
+    // get the auth data
+    let mut authentication_data = client
+        .authentication_data(&connection)
+        .await
+        .unwrap()
+        .unwrap();
+
+    // verify the token
+    if !authentication_data.validate_totp(verification.token.as_str()) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "Invalid token"})),
+        );
+    }
+
+    // regenerate the secret
+    authentication_data.set_secret(ClientAuthenticationData::gen_secret());
+    authentication_data.set_totp(false);
+    // update
+    connection
+        .update_by_column("uuid", &authentication_data)
+        .await
+        .unwrap();
+
+    (StatusCode::OK, Json(json!({"message": "Disabled"})))
+}
+
+pub async fn get_qr_code(
+    Extension(client): Extension<Client>,
+    Extension(locator): Extension<LocatorPointer>,
+) -> impl IntoResponse {
+    // lock
+    let locator = locator.lock().await;
+    let connection = locator.connection();
+
+    // get the auth data
+    let authentication_data = client
+        .authentication_data(connection)
+        .await
+        .unwrap()
+        .unwrap();
+
+    authentication_data.get_qr_code(client.nickname().as_str())
 }
 
 #[cfg(test)]
@@ -254,136 +367,123 @@ impl Default for SignupRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app;
-    use crate::database::establish_connection;
     use crate::tests::TestSuite;
-    use axum::body::Body;
-    use axum::http::header::CONTENT_TYPE;
-    use axum::http::{Method, Request};
-    use hyper::header::SET_COOKIE;
-    use tower::ServiceExt;
+    use axum::http::header::AUTHORIZATION;
+    use google_authenticator::GoogleAuthenticator;
 
     #[tokio::test]
     async fn test_signup() {
-        let connection = establish_connection().await;
-        // reset the database
-        TestSuite::reset_database(&connection).await;
+        // start the suite
+        let (connector, _) = TestSuite::start().await;
 
         // send the request
         let content = SignupRequest::default();
-        let response = app()
-            .await
-            .oneshot(
-                Request::builder()
-                    .uri("/auth/signup")
-                    .method(Method::POST)
-                    .header(CONTENT_TYPE, "application/json")
-                    .body(Body::from(serde_json::to_vec(&content).unwrap()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        let response = connector.post("/auth/signup").json(&content).send().await;
         assert_eq!(response.status(), StatusCode::CREATED);
 
         // parse the body
-        let body = TestSuite::parse_body::<Client>(response.into_body()).await;
+        let body = response.json::<Client>().await;
         assert_eq!(content.nickname, body.nickname().clone());
     }
 
     #[tokio::test]
     async fn test_login() {
         // init suite
-        let _suite = TestSuite::new().await;
+        let suite = TestSuite::new().await;
 
         // build the body
-        let body = TestSuite::create_body(
-            &AuthenticationRequest::builder()
-                .nickname("dfclient".into())
-                .password("password".into())
-                .token(None)
-                .build(),
-        );
+        let body = AuthenticationRequest::builder()
+            .nickname("dfclient".into())
+            .password("password".into())
+            .token(None)
+            .build();
 
         // send the request
-        let response = app()
-            .await
-            .oneshot(
-                Request::builder()
-                    .method(Method::POST)
-                    .uri("/auth/login")
-                    .header(CONTENT_TYPE, "application/json")
-                    .body(body)
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        let response = suite.connector.post("/auth/login").json(&body).send().await;
         assert_eq!(response.status(), StatusCode::OK);
-        // the body can be ignored because it is just a session id and it is the same as the cookie
-        let cookie = response.headers().get(SET_COOKIE).unwrap();
-        let cookie = Cookie::parse(cookie.to_str().unwrap()).unwrap();
-        assert_eq!(cookie.name(), "session_id");
-        assert!(cookie.http_only().unwrap());
-        assert!(cookie.secure().unwrap());
     }
 
     #[tokio::test]
     async fn test_login_user_not_found() {
         // init suite
-        let _suite = TestSuite::new().await;
+        let suite = TestSuite::new().await;
 
         // build the body
-        let body = TestSuite::create_body(
-            &AuthenticationRequest::builder()
-                .nickname("client".into())
-                .password("password".into())
-                .token(None)
-                .build(),
-        );
+        let body = AuthenticationRequest::builder()
+            .nickname("client".into())
+            .password("password".into())
+            .token(None)
+            .build();
 
         // send the request
-        let response = app()
-            .await
-            .oneshot(
-                Request::builder()
-                    .method(Method::POST)
-                    .uri("/auth/login")
-                    .header(CONTENT_TYPE, "application/json")
-                    .body(body)
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        let response = suite.connector.post("/auth/login").json(&body).send().await;
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
     async fn test_login_invalid_password() {
         // init suite
-        let _suite = TestSuite::new().await;
+        let suite = TestSuite::new().await;
 
         // build the body
-        let body = TestSuite::create_body(
-            &AuthenticationRequest::builder()
-                .nickname("dfclient".into())
-                .password("wdwad".into())
-                .token(None)
-                .build(),
-        );
+        let body = AuthenticationRequest::builder()
+            .nickname("dfclient".into())
+            .password("wdwad".into())
+            .token(None)
+            .build();
 
-        // TODO: We may can simplify the following stacked code on sometime
         // send the request
-        let response = app()
-            .await
-            .oneshot(
-                Request::builder()
-                    .method(Method::POST)
-                    .uri("/auth/login")
-                    .header(CONTENT_TYPE, "application/json")
-                    .body(body)
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        let response = suite.connector.post("/auth/login").json(&body).send().await;
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn test_password_change() {
+        let suite = TestSuite::new().await;
+        let authorization = suite.authenticate("dfclient", "password").await;
+
+        // build the body
+        let password = "658t7igGyuAhi@ljoeWADrfp%";
+        let body = UpdatePassword {
+            password: password.to_string(),
+        };
+
+        // send the request
+        let response = suite
+            .connector
+            .put("/auth/password")
+            .json(&body)
+            .header(AUTHORIZATION, authorization)
+            .send()
+            .await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // relogin with the new password (would panic on failure)
+        suite.authenticate("dfclient", password).await;
+    }
+
+    #[tokio::test]
+    #[should_panic]
+    async fn test_activate_totp() {
+        let suite = TestSuite::new().await;
+        let authorization = suite.authenticate("dfclient", "password").await;
+
+        // build the body
+        let body = ActivateTOTP {
+            token: GoogleAuthenticator::new()
+                .get_code(suite.authentication_data.secret().as_str(), 0)
+                .unwrap(),
+        };
+        let response = suite
+            .connector
+            .post("/auth/totp")
+            .json(&body)
+            .header(AUTHORIZATION, authorization)
+            .send()
+            .await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // should panic here
+        suite.authenticate("dfclient", "password").await;
     }
 }

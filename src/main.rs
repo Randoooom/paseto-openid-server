@@ -40,12 +40,16 @@ extern crate rbatis;
 extern crate lazy_static;
 #[macro_use]
 extern crate thiserror;
-extern crate core;
+#[macro_use]
+extern crate async_trait;
 
 use crate::middleware::require_session;
 use axum::http::{header, Method};
 use axum::middleware::from_fn;
-use axum::{routing::post, Extension, Router};
+use axum::{
+    routing::{get, post, put},
+    Extension, Router,
+};
 use std::net::SocketAddr;
 use tower_http::cors::{CorsLayer, Origin};
 use tower_http::trace::TraceLayer;
@@ -78,8 +82,6 @@ async fn main() {
     // init dotenv
     dotenv::dotenv().expect("Use the .env file");
 
-    // build axum
-    let app = app().await;
     // build the address
     let address = SocketAddr::from((
         [127, 0, 0, 1],
@@ -88,7 +90,7 @@ async fn main() {
     // run
     info!("Axum server listening on {}", address);
     axum::Server::bind(&address)
-        .serve(app.into_make_service())
+        .serve(app().await.into_make_service())
         .await
         .unwrap();
 }
@@ -102,8 +104,36 @@ async fn app() -> Router {
         .route("/auth/login", post(routes::authentication::post_login))
         .route("/auth/signup", post(routes::authentication::post_signup))
         .route(
+            "/auth/password",
+            put(routes::authentication::put_password).layer(from_fn(require_session)),
+        )
+        .route(
+            "/auth/totp",
+            post(routes::authentication::post_activate_totp)
+                .get(routes::authentication::get_qr_code)
+                .layer(from_fn(require_session)),
+        )
+        .route(
+            "/auth/totp/disable",
+            post(routes::authentication::post_disable_totp).layer(from_fn(require_session)),
+        )
+        .route(
             "/auth/logout",
             post(routes::authentication::post_logout).layer(from_fn(require_session)),
+        )
+        .route(
+            "/client/me",
+            get(routes::client::get_me)
+                .put(routes::client::put_me)
+                .layer(from_fn(require_session)),
+        )
+        .route(
+            "/client/me/address",
+            put(routes::client::put_address).layer(from_fn(require_session)),
+        )
+        .route(
+            "/client/delete",
+            post(routes::client::post_delete).layer(from_fn(require_session)),
         )
         .layer(Extension(locator))
         // enable CORS
