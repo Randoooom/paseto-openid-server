@@ -46,7 +46,10 @@ extern crate async_trait;
 use crate::middleware::require_session;
 use axum::http::{header, Method};
 use axum::middleware::from_fn;
-use axum::{routing::post, Extension, Router};
+use axum::{
+    routing::{get, post},
+    Extension, Router,
+};
 use std::net::SocketAddr;
 use tower_http::cors::{CorsLayer, Origin};
 use tower_http::trace::TraceLayer;
@@ -103,6 +106,10 @@ async fn app() -> Router {
         .route(
             "/auth/logout",
             post(routes::authentication::post_logout).layer(from_fn(require_session)),
+        )
+        .route(
+            "/client/me",
+            get(routes::client::get_me).layer(from_fn(require_session)),
         )
         .route(
             "/client/delete",

@@ -43,8 +43,14 @@ pub async fn post_delete(
     (StatusCode::OK, Json(json!({"message": "Deleted"})))
 }
 
+pub async fn get_me(Extension(client): Extension<Client>) -> impl IntoResponse {
+    // return the client as json
+    (StatusCode::OK, Json(client))
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::database::client::Client;
     use crate::tests::TestSuite;
     use axum::http::header::AUTHORIZATION;
     use axum::http::StatusCode;
@@ -53,13 +59,13 @@ mod tests {
     async fn test_delete() {
         let suite = TestSuite::new().await;
         // authenticate the default user
-        let cookie = suite.authenticate("dfclient", "password").await;
+        let authorization = suite.authenticate("dfclient", "password").await;
 
         // send the request
         let response = suite
             .connector
             .post("/client/delete")
-            .header(AUTHORIZATION, cookie)
+            .header(AUTHORIZATION, authorization)
             .send()
             .await;
 
@@ -68,5 +74,23 @@ mod tests {
             response.text().await,
             json!({"message": "Deleted"}).to_string()
         )
+    }
+
+    #[tokio::test]
+    async fn test_me() {
+        let suite = TestSuite::new().await;
+        // authenticate the default user
+        let authorization = suite.authenticate("dfclient", "password").await;
+
+        // send the request
+        let response = suite
+            .connector
+            .get("/client/me")
+            .header(AUTHORIZATION, authorization)
+            .send()
+            .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.json::<Client>().await.sub(), suite.client.sub());
     }
 }
