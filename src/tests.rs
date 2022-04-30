@@ -115,17 +115,5 @@ impl TestSuite {
 
         // convert
         session_id.as_str().unwrap().to_string()
-      
-        Self { client, connection }
-    }
-
-    pub async fn parse_body<T: DeserializeOwned>(body: BoxBody) -> T {
-        let raw = hyper::body::to_bytes(body).await.unwrap();
-        serde_json::from_slice::<T>(&raw).unwrap()
-    }
-
-    pub fn create_body<T: Serialize>(object: &T) -> Body {
-        let raw = serde_json::to_vec(object).unwrap();
-        Body::from(raw)
     }
 }
