@@ -47,7 +47,7 @@ use crate::middleware::require_session;
 use axum::http::{header, Method};
 use axum::middleware::from_fn;
 use axum::{
-    routing::{get, post},
+    routing::{get, post, put},
     Extension, Router,
 };
 use std::net::SocketAddr;
@@ -112,6 +112,10 @@ async fn app() -> Router {
             get(routes::client::get_me)
                 .put(routes::client::put_me)
                 .layer(from_fn(require_session)),
+        )
+        .route(
+            "/client/me/address",
+            put(routes::client::put_address).layer(from_fn(require_session)),
         )
         .route(
             "/client/delete",

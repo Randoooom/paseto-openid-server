@@ -90,10 +90,44 @@ pub async fn put_me(
     (StatusCode::OK, Json(client.clone()))
 }
 
+#[derive(Deserialize, Serialize)]
+pub struct UpdateAddress {
+    formatted: String,
+    street_address: String,
+    locality: String,
+    region: String,
+    postal_code: String,
+    country: String,
+}
+
+pub async fn put_address(
+    Extension(locator): Extension<LocatorPointer>,
+    Json(update): Json<UpdateAddress>,
+    Extension(client): Extension<Client>,
+) -> impl IntoResponse {
+    // lock the locator
+    let locator = locator.lock().await;
+    let connection = locator.connection();
+
+    // get the current address from the client
+    let mut address = client.address(connection).await.unwrap().unwrap();
+    // update it
+    let address = address
+        .set_formatted(update.formatted)
+        .set_street_address(update.street_address)
+        .set_locality(update.locality)
+        .set_region(update.region)
+        .set_postal_code(update.postal_code)
+        .set_country(update.country);
+    connection.update_by_column("uuid", address).await.unwrap();
+
+    (StatusCode::OK, Json(address.clone()))
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::database::client::Client;
-    use crate::routes::client::UpdateClient;
+    use crate::database::client::{Address, Client};
+    use crate::routes::client::{UpdateAddress, UpdateClient};
     use crate::tests::TestSuite;
     use axum::http::header::AUTHORIZATION;
     use axum::http::StatusCode;
@@ -177,5 +211,36 @@ mod tests {
             .send()
             .await;
         assert_eq!(response.json::<Client>().await.name(), data.name())
+    }
+
+    #[tokio::test]
+    async fn test_put_address() {
+        let suite = TestSuite::new().await;
+        // authenticate the default user
+        let authorization = suite.authenticate("dfclient", "password").await;
+
+        // build the body
+        let body = UpdateAddress {
+            formatted: "Hell Yea".to_string(),
+            street_address: "".to_string(),
+            locality: "".to_string(),
+            region: "".to_string(),
+            postal_code: "".to_string(),
+            country: "".to_string(),
+        };
+
+        // send the request
+        let response = suite
+            .connector
+            .put("/client/me/address")
+            .json(&body)
+            .header(AUTHORIZATION, authorization)
+            .send()
+            .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.json::<Address>().await.formatted().as_str(),
+            "Hell Yea"
+        );
     }
 }
