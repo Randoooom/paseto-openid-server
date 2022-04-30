@@ -27,7 +27,7 @@ use chrono::{DateTime, Duration, Utc};
 use rbatis::Uuid;
 use std::collections::HashMap;
 
-#[derive(Getters, Clone)]
+#[derive(Getters, Clone, Debug)]
 #[get = "pub"]
 pub struct Session {
     sub: Uuid,

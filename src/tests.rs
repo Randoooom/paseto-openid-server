@@ -23,23 +23,35 @@
  *  SOFTWARE.
  */
 
+use crate::app;
 use crate::database::client::{Address, Client, ClientAuthenticationData};
 use crate::database::establish_connection;
-use axum::body::BoxBody;
-use hyper::Body;
+use axum::http::StatusCode;
+use axum_test_helper::TestClient;
 use rbatis::crud::CRUD;
 use rbatis::rbatis::Rbatis;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
 
 #[cfg(test)]
 pub struct TestSuite {
-    client: Client,
-    connection: Rbatis,
+    pub client: Client,
+    pub connection: Rbatis,
+    pub connector: TestClient,
 }
 
 #[cfg(test)]
 impl TestSuite {
+    pub async fn start() -> (TestClient, Rbatis) {
+        // build the testClient
+        let connector = TestClient::new(app().await);
+        // connect to the database
+        let connection = establish_connection().await;
+
+        // reset the database
+        Self::reset_database(&connection).await;
+
+        (connector, connection)
+    }
+
     pub async fn reset_database(connection: &Rbatis) {
         // drop all tables
         let sql = include_str!("database/drop.sql");
@@ -48,10 +60,8 @@ impl TestSuite {
 
     /// Create a new suite
     pub async fn new() -> Self {
-        // connect to the database
-        let connection = establish_connection().await;
-        // reset the database
-        Self::reset_database(&connection).await;
+        // setup
+        let (connector, connection) = Self::start().await;
 
         // create a new client
         let client = Client::default();
@@ -76,16 +86,32 @@ impl TestSuite {
         connection.save(&auth, &[]).await.unwrap();
         connection.save(&address, &[]).await.unwrap();
 
-        Self { client, connection }
+        Self {
+            client,
+            connection,
+            connector,
+        }
     }
 
-    pub async fn parse_body<T: DeserializeOwned>(body: BoxBody) -> T {
-        let raw = hyper::body::to_bytes(body).await.unwrap();
-        serde_json::from_slice::<T>(&raw).unwrap()
-    }
+    pub async fn authenticate(&self, nickname: &str, password: &str) -> String {
+        // send the authentication request
+        let response = self
+            .connector
+            .post("/auth/login")
+            .json(&json!({"nickname": nickname,
+            "password": password}))
+            .send()
+            .await;
 
-    pub fn create_body<T: Serialize>(object: &T) -> Body {
-        let raw = serde_json::to_vec(object).unwrap();
-        Body::from(raw)
+        // validate the response
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // parse the body
+        let body = response.json::<serde_json::Value>().await;
+        // get the session_id
+        let session_id = body.get("session_id").unwrap();
+
+        // convert
+        session_id.as_str().unwrap().to_string()
     }
 }

@@ -103,13 +103,36 @@ impl Client {
         connection.fetch_by_column("client", self.sub.clone()).await
     }
 
-    // Get the associated authentication data object of the user
+    /// Get the associated authentication data object of the user
     pub async fn authentication_data(
         &self,
         connection: &Rbatis,
     ) -> rbatis::Result<Option<ClientAuthenticationData>> {
         // collect
         connection.fetch_by_column("client", self.sub.clone()).await
+    }
+
+    /// Delete the current client
+    pub async fn delete(self, connection: &Rbatis) {
+        // remove the associated data
+        connection
+            .remove_by_column::<Address, _>("client", self.sub.clone())
+            .await
+            .unwrap();
+        connection
+            .remove_by_column::<ClientAuthenticationData, _>("client", self.sub.clone())
+            .await
+            .unwrap();
+        connection
+            .remove_by_column::<ClientVerificationToken, _>("client", self.sub.clone())
+            .await
+            .unwrap();
+
+        // remove the client
+        connection
+            .remove_by_column::<Self, _>("sub", self.sub())
+            .await
+            .unwrap();
     }
 }
 

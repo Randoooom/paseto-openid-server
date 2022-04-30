@@ -40,7 +40,8 @@ extern crate rbatis;
 extern crate lazy_static;
 #[macro_use]
 extern crate thiserror;
-extern crate core;
+#[macro_use]
+extern crate async_trait;
 
 use crate::middleware::require_session;
 use axum::http::{header, Method};
@@ -78,8 +79,6 @@ async fn main() {
     // init dotenv
     dotenv::dotenv().expect("Use the .env file");
 
-    // build axum
-    let app = app().await;
     // build the address
     let address = SocketAddr::from((
         [127, 0, 0, 1],
@@ -88,7 +87,7 @@ async fn main() {
     // run
     info!("Axum server listening on {}", address);
     axum::Server::bind(&address)
-        .serve(app.into_make_service())
+        .serve(app().await.into_make_service())
         .await
         .unwrap();
 }
@@ -104,6 +103,10 @@ async fn app() -> Router {
         .route(
             "/auth/logout",
             post(routes::authentication::post_logout).layer(from_fn(require_session)),
+        )
+        .route(
+            "/user/delete",
+            post(routes::client::post_delete).layer(from_fn(require_session)),
         )
         .layer(Extension(locator))
         // enable CORS

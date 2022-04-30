@@ -33,8 +33,6 @@ use crate::ROOT;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::{Extension, Json};
-use axum_extra::extract::cookie::{Cookie, SameSite};
-use axum_extra::extract::CookieJar;
 use rbatis::crud::CRUD;
 
 #[derive(Deserialize, Serialize, TypedBuilder)]
@@ -50,7 +48,6 @@ pub struct AuthenticationRequest {
 pub async fn post_login(
     Json(data): Json<AuthenticationRequest>,
     Extension(locator): Extension<LocatorPointer>,
-    cookies: CookieJar,
 ) -> impl IntoResponse {
     // lock the locator
     let mut locked = locator.lock().await;
@@ -71,19 +68,9 @@ pub async fn post_login(
             // authenticate
             if authentication_data.login(data.password.as_str(), data.token.as_deref()) {
                 // start the session
-                let token = locked.auth_mut().start_session(client.sub().clone());
-
-                // build the cookie
-                let cookie = Cookie::build("session_id", token.clone())
-                    .secure(true)
-                    .same_site(SameSite::Strict)
-                    .http_only(true)
-                    .finish();
-                // set the cookie
-                let cookies = cookies.add(cookie);
-
-                // return the signed token
-                return Ok((StatusCode::OK, cookies, Json(json!({ "token": token }))));
+                let session = locked.auth_mut().start_session(client.sub().clone());
+                // return the session
+                return Ok((StatusCode::OK, Json(json!({ "session_id": session }))));
             }
         }
     }
@@ -209,7 +196,6 @@ pub async fn post_signup(
 pub async fn post_logout(
     Extension(locator): Extension<LocatorPointer>,
     Extension(session_id): Extension<SessionId>,
-    cookies: CookieJar,
 ) -> impl IntoResponse {
     // lock the locator
     let mut locked = locator.lock().await;
@@ -217,12 +203,7 @@ pub async fn post_logout(
     // end the session
     locked.auth_mut().end_session(session_id.0.as_str());
 
-    // get the cookie
-    let cookie = cookies.get(session_id.0.as_str()).unwrap().clone();
-    // remove the cookie
-    let cookies = cookies.remove(cookie);
-
-    (StatusCode::OK, cookies)
+    StatusCode::OK
 }
 
 #[cfg(test)]
@@ -254,136 +235,71 @@ impl Default for SignupRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app;
-    use crate::database::establish_connection;
     use crate::tests::TestSuite;
-    use axum::body::Body;
-    use axum::http::header::CONTENT_TYPE;
-    use axum::http::{Method, Request};
-    use hyper::header::SET_COOKIE;
-    use tower::ServiceExt;
 
     #[tokio::test]
     async fn test_signup() {
-        let connection = establish_connection().await;
-        // reset the database
-        TestSuite::reset_database(&connection).await;
+        // start the suite
+        let (connector, _) = TestSuite::start().await;
 
         // send the request
         let content = SignupRequest::default();
-        let response = app()
-            .await
-            .oneshot(
-                Request::builder()
-                    .uri("/auth/signup")
-                    .method(Method::POST)
-                    .header(CONTENT_TYPE, "application/json")
-                    .body(Body::from(serde_json::to_vec(&content).unwrap()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        let response = connector.post("/auth/signup").json(&content).send().await;
         assert_eq!(response.status(), StatusCode::CREATED);
 
         // parse the body
-        let body = TestSuite::parse_body::<Client>(response.into_body()).await;
+        let body = response.json::<Client>().await;
         assert_eq!(content.nickname, body.nickname().clone());
     }
 
     #[tokio::test]
     async fn test_login() {
         // init suite
-        let _suite = TestSuite::new().await;
+        let suite = TestSuite::new().await;
 
         // build the body
-        let body = TestSuite::create_body(
-            &AuthenticationRequest::builder()
-                .nickname("dfclient".into())
-                .password("password".into())
-                .token(None)
-                .build(),
-        );
+        let body = AuthenticationRequest::builder()
+            .nickname("dfclient".into())
+            .password("password".into())
+            .token(None)
+            .build();
 
         // send the request
-        let response = app()
-            .await
-            .oneshot(
-                Request::builder()
-                    .method(Method::POST)
-                    .uri("/auth/login")
-                    .header(CONTENT_TYPE, "application/json")
-                    .body(body)
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        let response = suite.connector.post("/auth/login").json(&body).send().await;
         assert_eq!(response.status(), StatusCode::OK);
-        // the body can be ignored because it is just a session id and it is the same as the cookie
-        let cookie = response.headers().get(SET_COOKIE).unwrap();
-        let cookie = Cookie::parse(cookie.to_str().unwrap()).unwrap();
-        assert_eq!(cookie.name(), "session_id");
-        assert!(cookie.http_only().unwrap());
-        assert!(cookie.secure().unwrap());
     }
 
     #[tokio::test]
     async fn test_login_user_not_found() {
         // init suite
-        let _suite = TestSuite::new().await;
+        let suite = TestSuite::new().await;
 
         // build the body
-        let body = TestSuite::create_body(
-            &AuthenticationRequest::builder()
-                .nickname("client".into())
-                .password("password".into())
-                .token(None)
-                .build(),
-        );
+        let body = AuthenticationRequest::builder()
+            .nickname("client".into())
+            .password("password".into())
+            .token(None)
+            .build();
 
         // send the request
-        let response = app()
-            .await
-            .oneshot(
-                Request::builder()
-                    .method(Method::POST)
-                    .uri("/auth/login")
-                    .header(CONTENT_TYPE, "application/json")
-                    .body(body)
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        let response = suite.connector.post("/auth/login").json(&body).send().await;
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
     async fn test_login_invalid_password() {
         // init suite
-        let _suite = TestSuite::new().await;
+        let suite = TestSuite::new().await;
 
         // build the body
-        let body = TestSuite::create_body(
-            &AuthenticationRequest::builder()
-                .nickname("dfclient".into())
-                .password("wdwad".into())
-                .token(None)
-                .build(),
-        );
+        let body = AuthenticationRequest::builder()
+            .nickname("dfclient".into())
+            .password("wdwad".into())
+            .token(None)
+            .build();
 
-        // TODO: We may can simplify the following stacked code on sometime
         // send the request
-        let response = app()
-            .await
-            .oneshot(
-                Request::builder()
-                    .method(Method::POST)
-                    .uri("/auth/login")
-                    .header(CONTENT_TYPE, "application/json")
-                    .body(body)
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        let response = suite.connector.post("/auth/login").json(&body).send().await;
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 }
