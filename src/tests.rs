@@ -36,6 +36,7 @@ pub struct TestSuite {
     pub client: Client,
     pub connection: Rbatis,
     pub connector: TestClient,
+    pub authentication_data: ClientAuthenticationData,
 }
 
 #[cfg(test)]
@@ -90,6 +91,7 @@ impl TestSuite {
             client,
             connection,
             connector,
+            authentication_data: auth,
         }
     }
 

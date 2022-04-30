@@ -104,6 +104,20 @@ async fn app() -> Router {
         .route("/auth/login", post(routes::authentication::post_login))
         .route("/auth/signup", post(routes::authentication::post_signup))
         .route(
+            "/auth/password",
+            put(routes::authentication::put_password).layer(from_fn(require_session)),
+        )
+        .route(
+            "/auth/totp",
+            post(routes::authentication::post_activate_totp)
+                .get(routes::authentication::get_qr_code)
+                .layer(from_fn(require_session)),
+        )
+        .route(
+            "/auth/totp/disable",
+            post(routes::authentication::post_disable_totp).layer(from_fn(require_session)),
+        )
+        .route(
             "/auth/logout",
             post(routes::authentication::post_logout).layer(from_fn(require_session)),
         )

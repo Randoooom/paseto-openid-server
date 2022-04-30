@@ -162,7 +162,7 @@ pub struct Address {
     client: Uuid,
 }
 
-fn hash_password(password: String) -> String {
+pub fn hash_password(password: String) -> String {
     // build the argon config
     let config = argon2::Config {
         variant: argon2::Variant::Argon2d,

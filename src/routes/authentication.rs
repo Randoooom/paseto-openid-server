@@ -23,7 +23,9 @@
  *  SOFTWARE.
  */
 
-use crate::database::client::{Client, ClientAuthenticationData, ClientVerificationToken, Gender};
+use crate::database::client::{
+    hash_password, Client, ClientAuthenticationData, ClientVerificationToken, Gender,
+};
 use crate::error::ResponseError;
 use crate::locator::mail::MailOptions;
 use crate::locator::LocatorPointer;
@@ -204,6 +206,138 @@ pub async fn post_logout(
     StatusCode::OK
 }
 
+#[derive(Deserialize, Serialize)]
+pub struct UpdatePassword {
+    password: String,
+}
+
+pub async fn put_password(
+    Extension(locator): Extension<LocatorPointer>,
+    Extension(client): Extension<Client>,
+    Json(update): Json<UpdatePassword>,
+    Extension(session_id): Extension<SessionId>,
+) -> impl IntoResponse {
+    // verify the strength of the password
+    if !Verification::password_strong_enough(update.password.as_str()) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "password not strong enough"})),
+        );
+    }
+
+    // lock
+    let mut locator = locator.lock().await;
+    let connection = locator.connection();
+    // get the auth data of the client
+    let mut auth = client
+        .authentication_data(connection)
+        .await
+        .unwrap()
+        .unwrap();
+
+    // hash the new password
+    let hashed = hash_password(update.password);
+    // update
+    auth.set_password(hashed);
+    connection.update_by_column("uuid", &auth).await.unwrap();
+
+    // end the session
+    locator.auth_mut().end_session(session_id.0.as_str());
+
+    (
+        StatusCode::OK,
+        Json(json!({"message": "Changed password. Session canceled."})),
+    )
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct ActivateTOTP {
+    token: String,
+}
+
+pub async fn post_activate_totp(
+    Extension(locator): Extension<LocatorPointer>,
+    Extension(client): Extension<Client>,
+    Json(activate): Json<ActivateTOTP>,
+) -> impl IntoResponse {
+    // lock the locator
+    let locator = locator.lock().await;
+    let connection = locator.connection();
+
+    // get the auth data
+    let mut auth = client
+        .authentication_data(connection)
+        .await
+        .unwrap()
+        .unwrap();
+    // verify the token
+    if !auth.validate_totp(activate.token.as_str()) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "Invalid token"})),
+        );
+    }
+
+    // update
+    auth.set_totp(true);
+    connection.update_by_column("uuid", &auth).await.unwrap();
+
+    (StatusCode::OK, Json(json!({"message": "Enabled"})))
+}
+
+pub async fn post_disable_totp(
+    Extension(locator): Extension<LocatorPointer>,
+    Extension(client): Extension<Client>,
+    Json(verification): Json<ActivateTOTP>,
+) -> impl IntoResponse {
+    // lock the locator
+    let locator = locator.lock().await;
+    let connection = locator.connection();
+    // get the auth data
+    let mut authentication_data = client
+        .authentication_data(&connection)
+        .await
+        .unwrap()
+        .unwrap();
+
+    // verify the token
+    if !authentication_data.validate_totp(verification.token.as_str()) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "Invalid token"})),
+        );
+    }
+
+    // regenerate the secret
+    authentication_data.set_secret(ClientAuthenticationData::gen_secret());
+    authentication_data.set_totp(false);
+    // update
+    connection
+        .update_by_column("uuid", &authentication_data)
+        .await
+        .unwrap();
+
+    (StatusCode::OK, Json(json!({"message": "Disabled"})))
+}
+
+pub async fn get_qr_code(
+    Extension(client): Extension<Client>,
+    Extension(locator): Extension<LocatorPointer>,
+) -> impl IntoResponse {
+    // lock
+    let locator = locator.lock().await;
+    let connection = locator.connection();
+
+    // get the auth data
+    let authentication_data = client
+        .authentication_data(connection)
+        .await
+        .unwrap()
+        .unwrap();
+
+    authentication_data.get_qr_code(client.nickname().as_str())
+}
+
 #[cfg(test)]
 impl Default for SignupRequest {
     fn default() -> Self {
@@ -234,6 +368,8 @@ impl Default for SignupRequest {
 mod tests {
     use super::*;
     use crate::tests::TestSuite;
+    use axum::http::header::AUTHORIZATION;
+    use google_authenticator::GoogleAuthenticator;
 
     #[tokio::test]
     async fn test_signup() {
@@ -299,5 +435,55 @@ mod tests {
         // send the request
         let response = suite.connector.post("/auth/login").json(&body).send().await;
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn test_password_change() {
+        let suite = TestSuite::new().await;
+        let authorization = suite.authenticate("dfclient", "password").await;
+
+        // build the body
+        let password = "658t7igGyuAhi@ljoeWADrfp%";
+        let body = UpdatePassword {
+            password: password.to_string(),
+        };
+
+        // send the request
+        let response = suite
+            .connector
+            .put("/auth/password")
+            .json(&body)
+            .header(AUTHORIZATION, authorization)
+            .send()
+            .await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // relogin with the new password (would panic on failure)
+        suite.authenticate("dfclient", password).await;
+    }
+
+    #[tokio::test]
+    #[should_panic]
+    async fn test_activate_totp() {
+        let suite = TestSuite::new().await;
+        let authorization = suite.authenticate("dfclient", "password").await;
+
+        // build the body
+        let body = ActivateTOTP {
+            token: GoogleAuthenticator::new()
+                .get_code(suite.authentication_data.secret().as_str(), 0)
+                .unwrap(),
+        };
+        let response = suite
+            .connector
+            .post("/auth/totp")
+            .json(&body)
+            .header(AUTHORIZATION, authorization)
+            .send()
+            .await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // should panic here
+        suite.authenticate("dfclient", "password").await;
     }
 }
