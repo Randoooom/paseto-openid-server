@@ -50,7 +50,7 @@ pub type LocatorPointer = Arc<Mutex<Locator>>;
 impl Locator {
     pub async fn new() -> LocatorPointer {
         // establish the connection
-        let connection = crate::database::establish_connection().await;
+        let connection = Arc::new(Mutex::new(crate::database::establish_connection().await));
         // create new instance of the signer
         let paseto = TokenSigner::new();
         let mail = MailSender::new();
