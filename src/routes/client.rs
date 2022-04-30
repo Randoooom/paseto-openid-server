@@ -36,11 +36,9 @@ pub async fn post_delete(
 ) -> impl IntoResponse {
     // lock the locator
     let locked = locator.lock().await;
-    // get the connection
-    let connection = locked.connection().lock().await;
 
     // delete the client
-    client.delete(&connection).await;
+    client.delete(locked.connection()).await;
     (StatusCode::OK, Json(json!({"message": "Deleted"})))
 }
 
@@ -82,10 +80,12 @@ pub async fn put_me(
 
     // lock the connection
     let locator = locator.lock().await;
-    // TODO because Rbatis implements Sync and Send we can remove the Mutex in the future
-    let connection = locator.connection().lock().await;
     // update the client
-    connection.update_by_column("sub", client).await.unwrap();
+    locator
+        .connection()
+        .update_by_column("sub", client)
+        .await
+        .unwrap();
 
     (StatusCode::OK, Json(client.clone()))
 }

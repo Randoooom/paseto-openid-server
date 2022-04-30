@@ -51,8 +51,8 @@ pub async fn post_login(
 ) -> impl IntoResponse {
     // lock the locator
     let mut locked = locator.lock().await;
-    // lock the connection
-    let connection = locked.connection().lock().await;
+    // get the connection
+    let connection = locked.connection();
 
     // get the client
     let client = Client::from_nickname(data.nickname.as_str(), &connection)
@@ -61,8 +61,6 @@ pub async fn post_login(
     if let Some(client) = client {
         // get the auth data
         let authentication_data = client.authentication_data(&connection).await.unwrap();
-        // unlock the connection
-        drop(connection);
 
         if let Some(authentication_data) = authentication_data {
             // authenticate
@@ -158,8 +156,8 @@ pub async fn post_signup(
         .password(data.password.clone())
         .build();
 
-    // lock the connection
-    let connection = locked.connection().lock().await;
+    // get the connection
+    let connection = locked.connection();
     // save the data
     connection.save(&client, &[]).await.unwrap();
     connection.save(&auth_data, &[]).await.unwrap();

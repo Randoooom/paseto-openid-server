@@ -48,12 +48,11 @@ pub async fn require_session<B>(mut request: Request<B>, next: Next<B>) -> impl 
             // get the session
             if let Some(session) = locator.auth_mut().session_valid(session_id) {
                 // fetch the client from the session
-                let connection = locator.connection().lock().await;
-                let client: Client = connection
+                let client: Client = locator
+                    .connection()
                     .fetch_by_column("sub", session.sub())
                     .await
                     .unwrap();
-                drop(connection);
                 drop(locator);
 
                 // set the client for the handler

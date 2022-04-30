@@ -24,13 +24,8 @@
  */
 
 use rbatis::rbatis::Rbatis;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 pub mod client;
-
-/// The connection wrapped into mutex and arc
-pub type ConnectionPointer = Arc<Mutex<Rbatis>>;
 
 /// Establish the postgres connection with the env vars
 pub async fn establish_connection() -> Rbatis {
