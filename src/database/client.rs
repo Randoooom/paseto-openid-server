@@ -38,9 +38,10 @@ pub enum Gender {
 }
 
 /// Covers https://openid.net/specs/openid-connect-basic-1_0.html#StandardClaims
-#[derive(TypedBuilder, Clone, Debug, Getters, PartialEq)]
+#[derive(TypedBuilder, Clone, Debug, Getters, PartialEq, Setters)]
 #[crud_table(id_name: "sub" | id_type: "Uuid" | table_name: "clients")]
 #[get = "pub"]
+#[set = "pub"]
 #[builder(field_defaults(setter(into)))]
 pub struct Client {
     /// the unique value for identification
@@ -136,9 +137,10 @@ impl Client {
     }
 }
 
-#[derive(TypedBuilder, Clone, Debug, Getters)]
+#[derive(TypedBuilder, Clone, Debug, Getters, Setters)]
 #[crud_table(id_name: "uuid" | id_type: "Uuid" | table_name: "addresses")]
 #[get = "pub"]
+#[set = "pub"]
 #[builder(field_defaults(setter(into)))]
 pub struct Address {
     /// the identifier of the address
@@ -175,9 +177,10 @@ fn hash_password(password: String) -> String {
     argon2::hash_encoded(password.as_bytes(), salt.as_slice(), &config).unwrap()
 }
 
-#[derive(TypedBuilder, Clone, Debug, Getters)]
+#[derive(TypedBuilder, Clone, Debug, Getters, Setters)]
 #[crud_table(id_name: "uuid" | id_type: "Uuid" | table_name: "client_authentication_data")]
 #[get = "pub"]
+#[set = "pub"]
 #[builder(field_defaults(setter(into)))]
 pub struct ClientAuthenticationData {
     /// the unique identifier for the data

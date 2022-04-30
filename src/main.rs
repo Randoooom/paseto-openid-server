@@ -109,7 +109,9 @@ async fn app() -> Router {
         )
         .route(
             "/client/me",
-            get(routes::client::get_me).layer(from_fn(require_session)),
+            get(routes::client::get_me)
+                .put(routes::client::put_me)
+                .layer(from_fn(require_session)),
         )
         .route(
             "/client/delete",

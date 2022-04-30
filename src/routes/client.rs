@@ -23,11 +23,12 @@
  *  SOFTWARE.
  */
 
-use crate::database::client::Client;
+use crate::database::client::{Client, Gender};
 use crate::locator::LocatorPointer;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::{Extension, Json};
+use rbatis::crud::CRUD;
 
 pub async fn post_delete(
     Extension(locator): Extension<LocatorPointer>,
@@ -48,9 +49,51 @@ pub async fn get_me(Extension(client): Extension<Client>) -> impl IntoResponse {
     (StatusCode::OK, Json(client))
 }
 
+#[derive(Deserialize, Serialize)]
+pub struct UpdateClient {
+    name: String,
+    given_name: String,
+    family_name: String,
+    middle_name: Option<String>,
+    preferred_username: String,
+    picture: String,
+    gender: Gender,
+    zoneinfo: String,
+    locale: String,
+}
+
+/// Accepts only full client objects
+pub async fn put_me(
+    Extension(locator): Extension<LocatorPointer>,
+    Json(data): Json<UpdateClient>,
+    Extension(mut client): Extension<Client>,
+) -> impl IntoResponse {
+    // build the new client
+    let client = client
+        .set_name(data.name)
+        .set_given_name(data.given_name)
+        .set_family_name(data.family_name)
+        .set_middle_name(data.middle_name)
+        .set_preferred_username(data.preferred_username)
+        .set_picture(data.picture)
+        .set_gender(data.gender)
+        .set_zoneinfo(data.zoneinfo)
+        .set_locale(data.locale);
+
+    // lock the connection
+    let locator = locator.lock().await;
+    // TODO because Rbatis implements Sync and Send we can remove the Mutex in the future
+    let connection = locator.connection().lock().await;
+    // update the client
+    connection.update_by_column("sub", client).await.unwrap();
+
+    (StatusCode::OK, Json(client.clone()))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::database::client::Client;
+    use crate::routes::client::UpdateClient;
     use crate::tests::TestSuite;
     use axum::http::header::AUTHORIZATION;
     use axum::http::StatusCode;
@@ -92,5 +135,47 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.json::<Client>().await.sub(), suite.client.sub());
+    }
+
+    #[tokio::test]
+    async fn test_put() {
+        let suite = TestSuite::new().await;
+        // authenticate the default user
+        let authorization = suite.authenticate("dfclient", "password").await;
+
+        // build the body
+        let body = UpdateClient {
+            name: "Changed".to_string(),
+            given_name: suite.client.given_name().clone(),
+            family_name: suite.client.family_name().clone(),
+            middle_name: suite.client.middle_name().clone(),
+            preferred_username: suite.client.preferred_username().clone(),
+            picture: suite.client.picture().clone(),
+            gender: suite.client.gender().clone(),
+            zoneinfo: suite.client.zoneinfo().clone(),
+            locale: suite.client.locale().clone(),
+        };
+
+        // send the request
+        let response = suite
+            .connector
+            .put("/client/me")
+            .header(AUTHORIZATION, &authorization)
+            .json(&body)
+            .send()
+            .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let data = response.json::<Client>().await;
+        assert_eq!(data.name().as_str(), "Changed");
+
+        // get the me
+        let response = suite
+            .connector
+            .get("/client/me")
+            .header(AUTHORIZATION, authorization)
+            .send()
+            .await;
+        assert_eq!(response.json::<Client>().await.name(), data.name())
     }
 }
