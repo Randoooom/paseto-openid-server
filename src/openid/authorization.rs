@@ -24,46 +24,67 @@
  */
 
 use crate::database::client::Client;
+use crate::error::ResponseError;
+use crate::paseto::TokenSigner;
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect};
+use axum::Json;
 use chrono::{DateTime, Duration, Utc};
 use rbatis::Uuid;
 use std::collections::HashMap;
 
 #[derive(Deserialize, Serialize)]
 pub struct AuthorizationRequest {
-    response_type: String,
-    client_id: String,
+    pub response_type: String,
+    pub client_id: String,
     /// "openid ..."
-    scope: String,
+    pub scope: String,
     /// TODO: verify issuers from the database
-    redirect_uri: String,
-    state: Option<String>,
-    nonce: String,
+    pub redirect_uri: String,
+    pub state: Option<String>,
     // the other fields can be ignored because this is not relevant in the api
 }
 
 #[derive(Deserialize, Serialize)]
 pub struct GrantTokenRequest {
-    /// must match 'authorization_code'
-    grant_type: String,
+    // not needed with openid
+    // must match 'authorization_code'
+    // grant_type: String,
     /// the issued code
-    code: String,
-    // TODO: handle the uri
-    redirect_uri: Option<String>,
-    client_id: Option<String>,
+    pub(crate) code: String,
+    // not needed with openid
+    // redirect_uri: Option<String>,
+    // client_id: Option<String>,
+    pub(crate) state: Option<String>,
 }
 
+#[derive(Deserialize, Serialize, Debug)]
+pub struct TokenResponse {
+    /// the token for the userinfo endpoint
+    access_token: String,
+    refresh_token: String,
+    // "Bearer"
+    token_type: String,
+    expires_in: String,
+    // paseto v4.public token
+    id_token: String,
+}
+
+#[derive(Setters, Clone)]
+#[set = "pub"]
 pub struct Context {
     sub: Uuid,
     scope: String,
+    state: Option<String>,
     created: DateTime<Utc>,
 }
 
 impl Context {
-    pub fn new(sub: Uuid, scope: String) -> Self {
+    pub fn new(sub: Uuid, scope: String, state: Option<String>) -> Self {
         Self {
             sub,
             scope,
+            state,
             created: Utc::now(),
         }
     }
@@ -78,12 +99,14 @@ impl Context {
 pub struct OpenIDAuthorization {
     /// the temporary saved codes with the associated client
     codes: HashMap<String, Context>,
+    tokens: HashMap<String, Context>,
 }
 
 impl OpenIDAuthorization {
     pub fn new() -> Self {
         Self {
             codes: HashMap::new(),
+            tokens: HashMap::new(),
         }
     }
 
@@ -102,7 +125,7 @@ impl OpenIDAuthorization {
         // save into the map
         self.codes.insert(
             code.clone(),
-            Context::new(client.sub().clone(), request.scope),
+            Context::new(client.sub().clone(), request.scope, request.state.clone()),
         );
         // build the redirect_uri
         let uri = {
@@ -116,9 +139,67 @@ impl OpenIDAuthorization {
             uri
         };
 
-        // return the redirect
-        Redirect::to(uri.as_str())
+        // because we do can not catch the redirect in the tests we make this
+        cfg_if! {
+            if #[cfg(test)] {
+                // return the uri as json value
+                return (StatusCode::OK, Json(json!({"uri": uri})));
+            } else {
+                // return the redirect
+                return Redirect::to(uri.as_str());
+            }
+        }
     }
 
-    pub async fn grant_token() -> impl IntoResponse {}
+    /// Convert the given temporary code into a access token (PASETO v4.public)
+    pub fn grant_token(
+        &mut self,
+        request: GrantTokenRequest,
+        client: &Client,
+    ) -> impl IntoResponse {
+        // get the context
+        match self.codes.get(request.code.as_str()) {
+            Some(context) => {
+                // verify the context
+                if !context.is_valid() {
+                    // remove the context
+                    self.codes.remove(request.code.as_str());
+
+                    return Err(ResponseError::Unauthorized);
+                }
+
+                // generate a access_token for the userinfo endpoint
+                let mut access_token = [0u8; 32];
+                openssl::rand::rand_bytes(&mut access_token).unwrap();
+                // encode as base64
+                let access_token = openssl::base64::encode_block(access_token.as_slice());
+
+                // clone the context
+                let mut context = context.clone();
+                // update the created
+                context.set_created(Utc::now());
+                // sign the id_token
+                let signer = TokenSigner::new();
+                let id_token = signer.sign(client.sub(), context.scope.clone());
+
+                // save as access_token into the map
+                self.tokens.insert(access_token.clone(), context);
+                // revoke the code
+                self.codes.remove(request.code.as_str());
+
+                // build the response
+                Ok((
+                    StatusCode::OK,
+                    Json(TokenResponse {
+                        access_token,
+                        refresh_token: "".to_string(),
+                        token_type: String::from("Bearer"),
+                        expires_in: String::from("3600"),
+                        id_token,
+                    }),
+                ))
+            }
+            None => Err(ResponseError::Unauthorized),
+        }
+    }
 }

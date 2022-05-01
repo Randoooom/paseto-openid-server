@@ -23,8 +23,76 @@
  *  SOFTWARE.
  */
 
+use crate::database::client::Client;
 use crate::locator::LocatorPointer;
+use crate::openid::authorization::GrantTokenRequest;
+use axum::extract::Form;
 use axum::response::IntoResponse;
 use axum::Extension;
 
-pub async fn grant_token(Extension(locator): Extension<LocatorPointer>) -> impl IntoResponse {}
+pub async fn grant_token(
+    Extension(locator): Extension<LocatorPointer>,
+    Form(request): Form<GrantTokenRequest>,
+    Extension(client): Extension<Client>,
+) -> impl IntoResponse {
+    // lock
+    let mut locator = locator.lock().await;
+
+    // handle the request
+    locator.openid_mut().grant_token(request, &client)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::openid::authorization::{AuthorizationRequest, GrantTokenRequest, TokenResponse};
+    use crate::tests::TestSuite;
+    use axum::http::header::AUTHORIZATION;
+    use reqwest::{StatusCode, Url};
+
+    #[tokio::test]
+    async fn test_token_grant() {
+        let suite = TestSuite::new().await;
+        let authorization = suite.authenticate("dfclient", "password").await;
+
+        // get the code
+        let code = {
+            let body = AuthorizationRequest {
+                response_type: "code".to_string(),
+                client_id: suite.client.sub().to_string(),
+                scope: "openid".to_string(),
+                redirect_uri: "https://example.com/callback/".to_string(),
+                state: None,
+            };
+
+            let response = suite
+                .connector
+                .post("/authorize")
+                .form(&body)
+                .header(AUTHORIZATION, &authorization)
+                .send()
+                .await;
+            assert_eq!(response.status(), StatusCode::OK);
+            let data = response.json::<serde_json::Value>().await;
+            let uri = data.get("uri").unwrap().as_str().unwrap();
+            // extract the code
+            let uri = Url::parse(uri).unwrap();
+            let (_, code) = uri.query_pairs().next().unwrap();
+
+            // convert to string
+            code.to_string()
+        };
+
+        // make the token request
+        let body = GrantTokenRequest { code, state: None };
+        let response = suite
+            .connector
+            .post("/token")
+            .header(AUTHORIZATION, &authorization)
+            .form(&body)
+            .send()
+            .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        // would panic on fail
+        response.json::<TokenResponse>().await;
+    }
+}

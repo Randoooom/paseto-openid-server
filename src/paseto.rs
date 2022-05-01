@@ -41,12 +41,12 @@ impl TokenSigner {
         // into the 64byte ec signature key manually
 
         // load the keys
-        let private_key_raw = PKey::private_key_from_pem(include_bytes!("../../private_key.pem"))
+        let private_key_raw = PKey::private_key_from_pem(include_bytes!("../private_key.pem"))
             .unwrap()
             // convert to raw
             .raw_private_key()
             .unwrap();
-        let public_key_raw = PKey::public_key_from_pem(include_bytes!("../../public_key.pem"))
+        let public_key_raw = PKey::public_key_from_pem(include_bytes!("../public_key.pem"))
             .unwrap()
             // convert to raw
             .raw_public_key()
@@ -69,7 +69,7 @@ impl TokenSigner {
     }
 
     /// Sign a new PASETO-Token with the given sub for use over openid
-    pub fn sign(&self, sub: &Uuid) -> String {
+    pub fn sign(&self, sub: &Uuid, scope: String) -> String {
         // build private key
         let private_key =
             PasetoAsymmetricPrivateKey::<V4, Public>::from(self.private_key.as_slice());
@@ -82,6 +82,7 @@ impl TokenSigner {
         let result = PasetoBuilder::<V4, Public>::default()
             .set_claim(SubjectClaim::from(sub.as_str()))
             .set_claim(ExpirationClaim::try_from(expiry.to_rfc3339()).unwrap())
+            .set_claim(CustomClaim::try_from(("scope", scope)).unwrap())
             .build(&private_key)
             .unwrap();
         result

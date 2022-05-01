@@ -42,6 +42,8 @@ extern crate lazy_static;
 extern crate thiserror;
 #[macro_use]
 extern crate async_trait;
+#[macro_use]
+extern crate cfg_if;
 
 use crate::middleware::require_session;
 use axum::http::{header, Method};
@@ -60,6 +62,7 @@ mod locator;
 mod logger;
 mod middleware;
 mod openid;
+mod paseto;
 mod routes;
 #[cfg(test)]
 mod tests;
@@ -142,6 +145,10 @@ async fn app() -> Router {
             post(routes::openid::authorize::post_authorize)
                 .get(routes::openid::authorize::get_authorize)
                 .layer(from_fn(require_session)),
+        )
+        .route(
+            "/token",
+            post(routes::openid::token::grant_token).layer(from_fn(require_session)),
         )
         .layer(Extension(locator))
         // enable CORS

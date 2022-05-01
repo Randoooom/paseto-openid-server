@@ -26,12 +26,12 @@
 use crate::database::client::Client;
 use crate::locator::LocatorPointer;
 use crate::openid::authorization::AuthorizationRequest;
-use axum::extract::Form;
+use axum::extract::{Form, Query};
 use axum::response::IntoResponse;
-use axum::{Extension, Json};
+use axum::Extension;
 
 pub async fn get_authorize(
-    Json(request): Json<AuthorizationRequest>,
+    Query(request): Query<AuthorizationRequest>,
     Extension(locator): Extension<LocatorPointer>,
     Extension(client): Extension<Client>,
 ) -> impl IntoResponse {
