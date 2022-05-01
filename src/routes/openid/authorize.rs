@@ -23,48 +23,33 @@
  *  SOFTWARE.
  */
 
-use crate::locator::auth::AuthHandler;
-use crate::locator::mail::MailSender;
-use crate::locator::paseto::TokenSigner;
-use crate::openid::authorization::OpenIDAuthorization;
-use rbatis::rbatis::Rbatis;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use crate::database::client::Client;
+use crate::locator::LocatorPointer;
+use crate::openid::authorization::AuthorizationRequest;
+use axum::extract::Form;
+use axum::response::IntoResponse;
+use axum::{Extension, Json};
 
-pub mod auth;
-pub mod mail;
-pub mod paseto;
+pub async fn get_authorize(
+    Json(request): Json<AuthorizationRequest>,
+    Extension(locator): Extension<LocatorPointer>,
+    Extension(client): Extension<Client>,
+) -> impl IntoResponse {
+    // lock
+    let mut locator = locator.lock().await;
 
-#[derive(Getters, MutGetters)]
-#[get = "pub"]
-#[get_mut = "pub"]
-pub struct Locator {
-    connection: Rbatis,
-    // the paseto instance
-    paseto: TokenSigner,
-    mail: MailSender,
-    auth: AuthHandler,
-    openid: OpenIDAuthorization,
+    // handle the request
+    locator.openid_mut().grant_code(request, &client)
 }
 
-pub type LocatorPointer = Arc<Mutex<Locator>>;
+pub async fn post_authorize(
+    Form(request): Form<AuthorizationRequest>,
+    Extension(locator): Extension<LocatorPointer>,
+    Extension(client): Extension<Client>,
+) -> impl IntoResponse {
+    // lock
+    let mut locator = locator.lock().await;
 
-impl Locator {
-    pub async fn new() -> LocatorPointer {
-        // establish the connection
-        let connection = crate::database::establish_connection().await;
-        // create new instance of the signer
-        let paseto = TokenSigner::new();
-        let mail = MailSender::new();
-        let auth = AuthHandler::new();
-        let openid = OpenIDAuthorization::new();
-
-        Arc::new(Mutex::new(Self {
-            connection,
-            paseto,
-            mail,
-            auth,
-            openid,
-        }))
-    }
+    // handle the request
+    locator.openid_mut().grant_code(request, &client)
 }

@@ -25,3 +25,4 @@
 
 pub mod authentication;
 pub mod client;
+pub mod openid;

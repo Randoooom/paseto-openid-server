@@ -23,45 +23,98 @@
  *  SOFTWARE.
  */
 
-// /// Space-delimited, case-sensitive list of ASCII string values that specifies whether the
-// /// Authorization Server prompts the End-User for reauthentication and consent.
-// pub enum Prompt {
-//     /// The Authorization Server MUST NOT display any authentication or consent user
-//     /// interface pages. An error is returned if an End-User is not already authenticated or the
-//     /// Client does not have pre-configured consent for the requested Claims or does not fulfill
-//     /// other conditions for processing the request. The error code will typically be `login_required`,
-//     /// `interaction_required`. This can be used as a method to check
-//     /// for existing authentication and/or consent.
-//     None,
-//     /// The Authorization Server SHOULD prompt the End-User for reauthentication. If it cannot
-//     /// reauthenticate the End-User, it MUST return an error, typically `login_required`.
-//     Login,
-//     /// The Authorization Server SHOULD prompt the End-User for consent before returning information
-//     /// to the Client. If it cannot obtain consent, it MUST return an error, typically `consent_required`.
-//     Consent,
-//     /// The Authorization Server SHOULD prompt the End-User to select a user account.
-//     /// This enables an End-User who has multiple accounts at the Authorization Server to select
-//     /// amongst the multiple accounts that they might have current sessions for. If it cannot
-//     /// obtain an account selection choice made by the End-User, it MUST return an error,
-//     /// typically `account_selection_required`.
-//     SelectAccount,
-// }
+use crate::database::client::Client;
+use axum::response::{IntoResponse, Redirect};
+use chrono::{DateTime, Duration, Utc};
+use rbatis::Uuid;
+use std::collections::HashMap;
 
-// /// ASCII [RFC20] string value that specifies how the Authorization Server displays the authentication
-// /// and consent user interface pages to the End-User.
-// pub enum Display {
-//     /// The Authorization Server SHOULD display the authentication and consent UI consistent with a
-//     /// full User Agent page view. If the display parameter is not specified,
-//     /// this is the default display mode.
-//     Page,
-//     /// The Authorization Server SHOULD display the authentication and consent UI consistent with
-//     /// a popup User Agent window. The popup User Agent window should be of an appropriate size for
-//     /// a login-focused dialog and should not obscure the entire window that it is popping up over.
-//     Popup,
-//     /// The Authorization Server SHOULD display the authentication and consent UI consistent
-//     /// with a device that leverages a touch interface.
-//     Touch,
-//     /// The Authorization Server SHOULD display the authentication and consent UI consistent with
-//     /// a "feature phone" type display.
-//     Wap,
-// }
+pub struct AuthorizationRequest {
+    response_type: String,
+    client_id: String,
+    /// "openid ..."
+    scope: String,
+    /// TODO: verify issuers from the database
+    redirect_uri: String,
+    state: Option<String>,
+    nonce: String,
+    // the other fields can be ignored because this is not relevant in the api
+}
+
+pub struct GrantTokenRequest {
+    /// must match 'authorization_code'
+    grant_type: String,
+    /// the issued code
+    code: String,
+    // TODO: handle the uri
+    redirect_uri: Option<String>,
+    client_id: Option<String>,
+}
+
+pub struct Context {
+    sub: Uuid,
+    scope: String,
+    created: DateTime<Utc>,
+}
+
+impl Context {
+    pub fn new(sub: Uuid, scope: String) -> Self {
+        Self {
+            sub,
+            scope,
+            created: Utc::now(),
+        }
+    }
+
+    pub fn is_valid(&self) -> bool {
+        let exp = self.created + Duration::minutes(10);
+
+        Utc::now() <= exp
+    }
+}
+
+pub struct OpenIDAuthorization {
+    /// the temporary saved codes with the associated client
+    codes: HashMap<String, Context>,
+}
+
+impl OpenIDAuthorization {
+    pub fn new() -> Self {
+        Self {
+            codes: HashMap::new(),
+        }
+    }
+
+    /// Authorize the request with the given data
+    pub async fn grant_code(
+        &mut self,
+        request: AuthorizationRequest,
+        client: &Client,
+    ) -> impl IntoResponse {
+        // generate the temporary code
+        let mut code = &[0u8; 16];
+        openssl::rand::rand_bytes(&mut code).unwrap();
+        // encode as base64
+        let code = openssl::base64::encode_block(code.as_bytes());
+
+        // save into the map
+        self.codes
+            .insert(code, Context::new(client.sub().clone(), request.scope));
+        // build the redirect_uri
+        let uri = {
+            let mut uri = request.redirect_uri;
+            uri.push_str(format!("?code={}", code).as_str());
+
+            if let Some(state) = request.state {
+                uri.push_str(format!("&state={}", state).as_str());
+            }
+
+            uri
+        };
+
+        // return the redirect
+        Redirect::to(uri.as_str())
+    }
+
+    pub async fn grant_token() -> impl IntoResponse {}
+}

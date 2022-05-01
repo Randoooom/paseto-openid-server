@@ -135,6 +135,13 @@ async fn app() -> Router {
             "/client/delete",
             post(routes::client::post_delete).layer(from_fn(require_session)),
         )
+        // openid beginning routes here
+        .route(
+            "/authorize",
+            post(routes::openid::authorize::post_authorize)
+                .get(routes::openid::authorize::get_authorize)
+                .layer(from_fn(require_session)),
+        )
         .layer(Extension(locator))
         // enable CORS
         .layer(
