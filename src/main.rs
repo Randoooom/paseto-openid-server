@@ -136,6 +136,7 @@ async fn app() -> Router {
             post(routes::client::post_delete).layer(from_fn(require_session)),
         )
         // openid beginning routes here
+        .route("/auth", post(routes::openid::post_authenticate))
         .route(
             "/authorize",
             post(routes::openid::authorize::post_authorize)

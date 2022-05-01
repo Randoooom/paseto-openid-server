@@ -29,6 +29,7 @@ use chrono::{DateTime, Duration, Utc};
 use rbatis::Uuid;
 use std::collections::HashMap;
 
+#[derive(Deserialize, Serialize)]
 pub struct AuthorizationRequest {
     response_type: String,
     client_id: String,
@@ -41,6 +42,7 @@ pub struct AuthorizationRequest {
     // the other fields can be ignored because this is not relevant in the api
 }
 
+#[derive(Deserialize, Serialize)]
 pub struct GrantTokenRequest {
     /// must match 'authorization_code'
     grant_type: String,
@@ -86,20 +88,22 @@ impl OpenIDAuthorization {
     }
 
     /// Authorize the request with the given data
-    pub async fn grant_code(
+    pub fn grant_code(
         &mut self,
         request: AuthorizationRequest,
         client: &Client,
     ) -> impl IntoResponse {
         // generate the temporary code
-        let mut code = &[0u8; 16];
+        let mut code = [0u8; 16];
         openssl::rand::rand_bytes(&mut code).unwrap();
         // encode as base64
-        let code = openssl::base64::encode_block(code.as_bytes());
+        let code = openssl::base64::encode_block(code.as_slice());
 
         // save into the map
-        self.codes
-            .insert(code, Context::new(client.sub().clone(), request.scope));
+        self.codes.insert(
+            code.clone(),
+            Context::new(client.sub().clone(), request.scope),
+        );
         // build the redirect_uri
         let uri = {
             let mut uri = request.redirect_uri;

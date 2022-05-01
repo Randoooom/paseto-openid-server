@@ -205,7 +205,8 @@ impl ClientAuthenticationData {
     /// Generates a new random base32 encoded secret used for totp
     pub fn gen_secret() -> String {
         // generate random bytes
-        let mut bytes = [0u8; 32];
+        // is that large because it is also used for the secret based authentication and it is only base32
+        let mut bytes = [0u8; 64];
         // fill
         openssl::rand::rand_bytes(&mut bytes).unwrap();
 
