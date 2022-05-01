@@ -25,6 +25,7 @@
 
 use crate::database::client::Client;
 use crate::error::ResponseError;
+use crate::openid::Scope;
 use crate::paseto::TokenSigner;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect};
@@ -32,6 +33,7 @@ use axum::Json;
 use chrono::{DateTime, Duration, Utc};
 use rbatis::Uuid;
 use std::collections::HashMap;
+use std::str::FromStr;
 
 #[derive(Deserialize, Serialize)]
 pub struct AuthorizationRequest {
@@ -51,11 +53,11 @@ pub struct GrantTokenRequest {
     // must match 'authorization_code'
     // grant_type: String,
     /// the issued code
-    pub(crate) code: String,
+    pub code: String,
     // not needed with openid
     // redirect_uri: Option<String>,
     // client_id: Option<String>,
-    pub(crate) state: Option<String>,
+    pub state: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -75,13 +77,13 @@ pub struct TokenResponse {
 #[get = "pub"]
 pub struct Context {
     sub: Uuid,
-    scope: String,
+    scope: Vec<Scope>,
     state: Option<String>,
     created: DateTime<Utc>,
 }
 
 impl Context {
-    pub fn new(sub: Uuid, scope: String, state: Option<String>) -> Self {
+    pub fn new(sub: Uuid, scope: Vec<Scope>, state: Option<String>) -> Self {
         Self {
             sub,
             scope,
@@ -123,10 +125,21 @@ impl OpenIDAuthorization {
         // encode as base64
         let code = openssl::base64::encode_block(code.as_slice());
 
+        let scopes = request
+            .scope
+            .split_whitespace()
+            .map(Scope::from_str)
+            .filter(|v| v.is_ok())
+            .collect();
+
+        if scopes.len() == 0 {
+            return Err(ResponseError::BadRequest(String::from("Invalid scopes")));
+        }
+
         // save into the map
         self.codes.insert(
             code.clone(),
-            Context::new(client.sub().clone(), request.scope, request.state.clone()),
+            Context::new(client.sub().clone(), scopes, request.state.clone()),
         );
         // build the redirect_uri
         let uri = {
@@ -142,13 +155,13 @@ impl OpenIDAuthorization {
 
         // because we do can not catch the redirect in the tests we make this
         cfg_if! {
-            if #[cfg(test)] {
-                // return the uri as json value
-                return (StatusCode::OK, Json(json!({"uri": uri})));
-            } else {
-                // return the redirect
-                return Redirect::to(uri.as_str());
-            }
+                if #[cfg(test)] {
+                    // return the uri as json value
+                    return Ok((StatusCode::OK, Json(json!({"uri": uri}))));
+                } else {
+                    // return the redirect
+                    return Ok(Redirect::to(uri.as_str()));
+                }
         }
     }
 

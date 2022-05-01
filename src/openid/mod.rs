@@ -23,5 +23,32 @@
  *  SOFTWARE.
  */
 
+use std::str::FromStr;
+
 pub mod authorization;
 pub mod verification;
+
+pub enum Scope {
+    OpenId,
+    Profile,
+    Email,
+    Address,
+    Phone,
+    Offline,
+}
+
+impl FromStr for Scope {
+    type Err = ();
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        match raw.to_lowercase().as_str() {
+            "openid" => Ok(Scope::OpenId),
+            "profile" => Ok(Scope::Profile),
+            "email" => Ok(Scope::Email),
+            "address" => Ok(Scope::Address),
+            "phone" => Ok(Scope::Phone),
+            "offline" => Ok(Scope::Offline),
+            _ => Err(()),
+        }
+    }
+}
