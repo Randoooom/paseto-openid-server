@@ -28,6 +28,7 @@ use std::str::FromStr;
 pub mod authorization;
 pub mod verification;
 
+#[derive(Clone, Debug)]
 pub enum Scope {
     OpenId,
     Profile,
@@ -49,6 +50,19 @@ impl FromStr for Scope {
             "phone" => Ok(Scope::Phone),
             "offline" => Ok(Scope::Offline),
             _ => Err(()),
+        }
+    }
+}
+
+impl ToString for Scope {
+    fn to_string(&self) -> String {
+        match self {
+            Scope::Address => String::from("address"),
+            Scope::Email => String::from("email"),
+            Scope::OpenId => String::from("openId"),
+            Scope::Profile => String::from("profile"),
+            Scope::Phone => String::from("phone"),
+            Scope::Offline => String::from("offline"),
         }
     }
 }

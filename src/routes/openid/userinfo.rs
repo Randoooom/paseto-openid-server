@@ -55,7 +55,7 @@ pub async fn get_userinfo<B>(
                     .unwrap();
 
                 // TODO: handle the scopes
-                Ok(Json(client))
+                return Ok(Json(client));
             }
             Err(ResponseError::Unauthorized)
         }

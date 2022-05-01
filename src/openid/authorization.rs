@@ -130,7 +130,8 @@ impl OpenIDAuthorization {
             .split_whitespace()
             .map(Scope::from_str)
             .filter(|v| v.is_ok())
-            .collect();
+            .map(|v| v.unwrap())
+            .collect::<Vec<Scope>>();
 
         if scopes.len() == 0 {
             return Err(ResponseError::BadRequest(String::from("Invalid scopes")));
@@ -194,7 +195,16 @@ impl OpenIDAuthorization {
                 context.set_created(Utc::now());
                 // sign the id_token
                 let signer = TokenSigner::new();
-                let id_token = signer.sign(client.sub(), context.scope.clone());
+                let id_token = signer.sign(
+                    client.sub(),
+                    context
+                        .scope
+                        .clone()
+                        .into_iter()
+                        .map(|v| v.to_string())
+                        .collect::<Vec<String>>()
+                        .join(" "),
+                );
 
                 // save as access_token into the map
                 self.tokens.insert(access_token.clone(), context);
