@@ -23,6 +23,7 @@
  *  SOFTWARE.
  */
 
+use crate::ROOT;
 use chrono::{Duration, Utc};
 use openssl::pkey::PKey;
 use rbatis::Uuid;
@@ -81,6 +82,8 @@ impl TokenSigner {
         // sign the token
         let result = PasetoBuilder::<V4, Public>::default()
             .set_claim(SubjectClaim::from(sub.as_str()))
+            .set_claim(AudienceClaim::from(sub.as_str()))
+            .set_claim(IssuerClaim::from(ROOT.as_str()))
             .set_claim(ExpirationClaim::try_from(expiry.to_rfc3339()).unwrap())
             .set_claim(CustomClaim::try_from(("scope", scope)).unwrap())
             .build(&private_key)

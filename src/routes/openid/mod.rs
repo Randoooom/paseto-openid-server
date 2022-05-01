@@ -34,6 +34,7 @@ use rbatis::Uuid;
 
 pub mod authorize;
 pub mod token;
+pub mod userinfo;
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct ClientBasedLoginRequest {

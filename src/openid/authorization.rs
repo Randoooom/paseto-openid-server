@@ -45,7 +45,7 @@ pub struct AuthorizationRequest {
     // the other fields can be ignored because this is not relevant in the api
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct GrantTokenRequest {
     // not needed with openid
     // must match 'authorization_code'
@@ -70,8 +70,9 @@ pub struct TokenResponse {
     id_token: String,
 }
 
-#[derive(Setters, Clone)]
+#[derive(Setters, Clone, Debug, Getters)]
 #[set = "pub"]
+#[get = "pub"]
 pub struct Context {
     sub: Uuid,
     scope: String,
@@ -200,6 +201,22 @@ impl OpenIDAuthorization {
                 ))
             }
             None => Err(ResponseError::Unauthorized),
+        }
+    }
+
+    pub fn token_valid(&mut self, token: &str) -> Option<Context> {
+        // get the context
+        match self.tokens.get(token) {
+            Some(context) => {
+                // validate the context
+                if context.is_valid() {
+                    return Some(context.clone());
+                }
+
+                // remove it
+                self.tokens.remove(token)
+            }
+            None => None,
         }
     }
 }
