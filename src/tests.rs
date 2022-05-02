@@ -26,10 +26,13 @@
 use crate::app;
 use crate::database::client::{Address, Client, ClientAuthenticationData};
 use crate::database::establish_connection;
+use crate::openid::authorization::{AuthorizationRequest, GrantTokenRequest, TokenResponse};
+use crate::openid::Scope;
 use axum::http::StatusCode;
 use axum_test_helper::TestClient;
 use rbatis::crud::CRUD;
 use rbatis::rbatis::Rbatis;
+use reqwest::header::AUTHORIZATION;
 
 #[cfg(test)]
 pub struct TestSuite {
@@ -115,5 +118,51 @@ impl TestSuite {
 
         // convert
         session_id.as_str().unwrap().to_string()
+    }
+
+    pub async fn gain_token(&self, authorization: &String, scopes: Vec<Scope>) -> TokenResponse {
+        // make the code request
+        let code = {
+            let body = AuthorizationRequest {
+                response_type: "code".to_string(),
+                client_id: self.client.sub().to_string(),
+                scope: scopes
+                    .into_iter()
+                    .map(|scope| scope.to_string())
+                    .collect::<Vec<String>>()
+                    .join(" "),
+                redirect_uri: "https://example.com/callback/".to_string(),
+                state: None,
+            };
+            let response = self
+                .connector
+                .post("/authorize")
+                .form(&body)
+                .header(AUTHORIZATION, authorization)
+                .send()
+                .await;
+
+            assert_eq!(response.status(), StatusCode::OK);
+            let data = response.json::<serde_json::Value>().await;
+            let uri = data.get("uri").unwrap().as_str().unwrap();
+            // extract the code
+            let code = uri.split("?code=").last().unwrap();
+
+            // convert to string
+            code.to_string()
+        };
+
+        // make the token request
+        let body = GrantTokenRequest { code, state: None };
+        let response = self
+            .connector
+            .post("/token")
+            .header(AUTHORIZATION, authorization)
+            .form(&body)
+            .send()
+            .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        // would panic on fail
+        response.json::<TokenResponse>().await
     }
 }

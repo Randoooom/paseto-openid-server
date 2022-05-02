@@ -47,7 +47,7 @@ mod tests {
     use crate::openid::authorization::{AuthorizationRequest, GrantTokenRequest, TokenResponse};
     use crate::tests::TestSuite;
     use axum::http::header::AUTHORIZATION;
-    use reqwest::{StatusCode, Url};
+    use reqwest::StatusCode;
 
     #[tokio::test]
     async fn test_token_grant() {
@@ -75,8 +75,7 @@ mod tests {
             let data = response.json::<serde_json::Value>().await;
             let uri = data.get("uri").unwrap().as_str().unwrap();
             // extract the code
-            let uri = Url::parse(uri).unwrap();
-            let (_, code) = uri.query_pairs().next().unwrap();
+            let code = uri.split("?code=").last().unwrap();
 
             // convert to string
             code.to_string()

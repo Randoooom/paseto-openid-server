@@ -60,7 +60,8 @@ pub struct GrantTokenRequest {
     pub state: Option<String>,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Getters)]
+#[get = "pub"]
 pub struct TokenResponse {
     /// the token for the userinfo endpoint
     access_token: String,

@@ -23,6 +23,7 @@
  *  SOFTWARE.
  */
 
+use crate::openid::Scope;
 use crate::TOTP_NAME;
 use argon2::{self};
 use google_authenticator::{ErrorCorrectionLevel, GoogleAuthenticator};
@@ -135,6 +136,74 @@ impl Client {
             .await
             .unwrap();
     }
+
+    pub async fn userinfo(&self, connection: &Rbatis, scopes: &Vec<Scope>) -> Userinfo {
+        let mut userinfo = Userinfo::default();
+
+        for scope in scopes.iter() {
+            match scope {
+                Scope::Profile => {
+                    userinfo.set_name(self.name.clone().into());
+                    userinfo.set_family_name(self.family_name.clone().into());
+                    userinfo.set_given_name(self.given_name.clone().into());
+                    userinfo.set_middle_name(self.middle_name.clone().into());
+                    userinfo.set_nickname(self.nickname.clone().into());
+                    userinfo.set_preferred_username(self.preferred_username.clone().into());
+                    userinfo.set_profile(self.profile.clone().into());
+                    userinfo.set_picture(self.picture.clone().into());
+                    userinfo.set_website(self.website.clone().into());
+                    userinfo.set_gender(self.gender.clone().into());
+                    userinfo.set_birthdate(self.birthdate.clone().into());
+                    userinfo.set_zoneinfo(self.zoneinfo.clone().into());
+                    userinfo.set_locale(self.locale.clone().into());
+                    userinfo.set_updated_at(self.updated_at.clone().into());
+                }
+                Scope::Email => {
+                    userinfo.set_email(self.email.clone().into());
+                    userinfo.set_email_verified(self.email_verified.clone().into());
+                }
+                Scope::Address => {
+                    // load the address information
+                    let address = self.address(connection).await.unwrap().unwrap();
+                    // update
+                    userinfo.set_address(address.clone().into());
+                }
+                Scope::Phone => {
+                    userinfo.set_phone_number(self.phone_number.clone().into());
+                    userinfo.set_email_verified(self.phone_number_verified.clone().into());
+                }
+                _ => {}
+            };
+        }
+
+        userinfo
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, Default, Setters, Getters)]
+#[set = "pub"]
+#[get = "pub"]
+pub struct Userinfo {
+    sub: Option<Uuid>,
+    name: Option<String>,
+    given_name: Option<String>,
+    family_name: Option<String>,
+    middle_name: Option<String>,
+    nickname: Option<String>,
+    preferred_username: Option<String>,
+    profile: Option<String>,
+    picture: Option<String>,
+    website: Option<String>,
+    email: Option<String>,
+    email_verified: Option<bool>,
+    gender: Option<Gender>,
+    birthdate: Option<String>,
+    zoneinfo: Option<String>,
+    locale: Option<String>,
+    phone_number: Option<String>,
+    phone_number_verified: Option<bool>,
+    address: Option<Address>,
+    updated_at: Option<TimestampZ>,
 }
 
 #[derive(TypedBuilder, Clone, Debug, Getters, Setters)]

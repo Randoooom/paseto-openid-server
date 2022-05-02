@@ -150,6 +150,7 @@ async fn app() -> Router {
             "/token",
             post(routes::openid::token::grant_token).layer(from_fn(require_session)),
         )
+        .route("/userinfo", get(routes::openid::userinfo::get_userinfo))
         .layer(Extension(locator))
         // enable CORS
         .layer(

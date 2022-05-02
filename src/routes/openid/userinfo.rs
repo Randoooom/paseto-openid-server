@@ -42,7 +42,7 @@ pub async fn get_userinfo<B>(
     match request.headers().get(AUTHORIZATION) {
         Some(header) => {
             // parse the token (split bearer of)
-            let mut split = header.to_str().unwrap().split_whitespace();
+            let split = header.to_str().unwrap().split_whitespace();
             let token = split.last().unwrap();
 
             // validate the token
@@ -54,11 +54,42 @@ pub async fn get_userinfo<B>(
                     .await
                     .unwrap();
 
-                // TODO: handle the scopes
-                return Ok(Json(client));
+                return Ok(Json(
+                    client.userinfo(locator.connection(), context.scope()).await,
+                ));
             }
             Err(ResponseError::Unauthorized)
         }
         None => Err(ResponseError::Unauthorized),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::database::client::Userinfo;
+    use crate::openid::Scope;
+    use crate::tests::TestSuite;
+    use reqwest::header::AUTHORIZATION;
+    use reqwest::StatusCode;
+
+    #[tokio::test]
+    async fn userinfo() {
+        let suite = TestSuite::new().await;
+        let authorization = suite.authenticate("dfclient", "password").await;
+        let token = suite
+            .gain_token(&authorization, vec![Scope::OpenId, Scope::Email])
+            .await;
+
+        let response = suite
+            .connector
+            .get("/userinfo")
+            .header(AUTHORIZATION, token.access_token())
+            .send()
+            .await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let data = response.json::<Userinfo>().await;
+        assert!(data.email().is_some());
+        assert!(data.email_verified().is_some());
     }
 }
