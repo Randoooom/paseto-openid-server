@@ -139,6 +139,7 @@ impl Client {
 
     pub async fn userinfo(&self, connection: &Rbatis, scopes: &Vec<Scope>) -> Userinfo {
         let mut userinfo = Userinfo::default();
+        userinfo.set_sub(self.sub.clone().into());
 
         for scope in scopes.iter() {
             match scope {
